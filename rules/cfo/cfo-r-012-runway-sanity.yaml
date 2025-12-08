@@ -1,0 +1,14 @@
+id: CFO-R-012
+title: Runway Sanity
+severity: warn
+bucket: financial_reasonableness
+description: Cash runway based on average monthly burn should not exceed 60 months.
+evidence:
+  requires_intents: ["cash_like","burn_like","period_like"]
+  checks:
+    - type: computed_value_bounds
+      expression: "cash_like / max(burn_like,1e-9)"
+      low: 0
+      high: 60
+fix_tip: "Confirm burn calculation; excessive runway may imply stale data."
+version: "1.0.0"

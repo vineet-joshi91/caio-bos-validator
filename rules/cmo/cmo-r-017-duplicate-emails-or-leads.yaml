@@ -1,0 +1,14 @@
+id: CMO-R-017
+title: Duplicate Leads/Emails
+severity: warn
+bucket: data_quality
+description: Detect duplicate lead emails within and across periods.
+evidence:
+  requires_intents: ["lead_email_like","period_like"]
+  checks:
+    - type: duplicate_values
+      column: "lead_email_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Deduplicate with canonical keys; filter test/bot leads."
+version: "1.0.0"

@@ -1,0 +1,14 @@
+id: CPO-R-009
+title: Competency Match Index
+severity: warn
+bucket: talent_fit_alignment
+description: Candidate’s competency overlap with job requirement should exceed 70%.
+evidence:
+  requires_intents: ["resume_parsed","job_requirements_like"]
+  checks:
+    - type: skill_overlap_ratio
+      resume: "resume_parsed"
+      jd: "job_requirements_like"
+      min_overlap: 0.7
+fix_tip: "Revise JD or consider additional assessment if overlap <70%."
+version: "1.0.0"

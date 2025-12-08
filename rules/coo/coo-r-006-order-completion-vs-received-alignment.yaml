@@ -1,0 +1,16 @@
+id: COO-R-006
+title: Order Completion vs Received Alignment
+severity: block
+bucket: process_cohesion
+description: Orders completed must equal or slightly lag orders received (within 5%).
+evidence:
+  requires_intents: ["orders_received_like","orders_completed_like","period_like"]
+  checks:
+    - type: equation_intents_tolerance
+      expression: "orders_completed_like = orders_received_like"
+      tolerance_abs: 0.05
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Reconcile order queues; account for backorders or cancellations explicitly."
+version: "1.0.0"

@@ -1,0 +1,17 @@
+id: CHRO-R-011
+title: Pay Variance Within Band
+severity: warn
+bucket: compensation_fairness
+description: Std dev within grade should be ≤30% of mean, after outlier trimming.
+evidence:
+  requires_intents: ["salary_like","grade_like"]
+  checks:
+    - type: band_variance_bound
+      value: "salary_like"
+      band: "grade_like"
+      max_std_over_mean: 0.30
+      trim_pct: 0.05
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Normalize pay ranges by grade; verify legacy allowances and regional adjustments."
+version: "1.0.0"

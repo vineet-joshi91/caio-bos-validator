@@ -1,0 +1,17 @@
+id: CMO-R-001
+title: Channel Spend Reconciliation
+severity: block
+bucket: channel_integrity
+description: Total spend should reconcile with the sum of channel/campaign spends within 2%.
+evidence:
+  requires_intents: ["total_spend_like","spend_by_channel_like","channel_like","period_like"]
+  checks:
+    - type: sum_reconciliation_intents
+      total: "total_spend_like"
+      parts: ["spend_by_channel_like"]
+      group_by: "period_like"
+      tolerance_abs: 0.02
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Ensure exports include all channels; avoid double-counting shared budgets."
+version: "1.0.0"

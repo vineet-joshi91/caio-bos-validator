@@ -1,0 +1,15 @@
+id: CPO-R-017
+title: Succession Pipeline Health
+severity: warn
+bucket: strategic_retention
+description: Each critical role should have at least two identified successors or backups.
+evidence:
+  requires_intents: ["critical_roles_like","identified_successors_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "identified_successors_like"
+      denominator: "critical_roles_like"
+      low: 2.0
+      high: 100.0
+fix_tip: "Develop talent maps; assign deputies for all business-critical positions."
+version: "1.0.0"

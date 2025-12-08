@@ -1,0 +1,35 @@
+id: CFO-R-009
+title: Gross Margin Properness (Context-Aware)
+severity: warn
+bucket: financial_reasonableness
+description: Evaluates whether the company’s gross margin trend is internally consistent and economically proper for its own pattern.
+evidence:
+  requires_intents: ["revenue_like","cogs_like","period_like"]
+  checks:
+    # 1. Compute gross margin per period
+    - type: derived_metric
+      name: "gross_margin_ratio"
+      expression: "(revenue_like - cogs_like) / max(revenue_like,1e-9)"
+      group_by: "period_like"
+
+    # 2. Temporal stability check — avoid abrupt spikes or collapses
+    - type: deviation_from_rolling_mean
+      column: "gross_margin_ratio"
+      window: 3
+      max_dev_pct: 0.2
+
+    # 3. Variance sanity — reject unnaturally flat or volatile margins
+    - type: variance_bounds
+      column: "gross_margin_ratio"
+      min_var: 1e-6
+      max_var: 0.05
+
+    # 4. Directional correlation — margin should not deteriorate as revenue grows
+    - type: conditional_trend_flag_intents
+      left: { column: "revenue_like", condition: "increasing_3_of_4" }
+      right: { column: "gross_margin_ratio", condition: "decreasing_3_of_4" }
+
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Review pricing, discounts, or cost recognition if gross margin diverges sharply from its historical pattern. Stable or realistic fluctuation is preferred over static or erratic values."
+version: "1.0.0"

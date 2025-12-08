@@ -1,0 +1,18 @@
+id: CHRO-R-004
+title: Departmental Proportion Stability
+severity: warn
+bucket: workforce_integrity
+description: Department share of total headcount should not shift by >30% of its baseline in one period.
+evidence:
+  requires_intents: ["headcount_by_dept_like","headcount_total_like","department_like","period_like"]
+  checks:
+    - type: department_mix_change_bounds
+      dept_headcount: "headcount_by_dept_like"
+      total_headcount: "headcount_total_like"
+      department: "department_like"
+      period: "period_like"
+      max_change_pct_of_baseline: 0.30
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Large swings suggest reorg or mapping issues; annotate restructures or fix department codes."
+version: "1.0.0"

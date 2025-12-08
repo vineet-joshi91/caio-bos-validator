@@ -1,0 +1,19 @@
+# cfo-r-009-gross-margin-range-intent.yaml
+id: CFO-R-009
+title: Gross Margin Reasonableness (Intent-Based)
+severity: warn
+bucket: anomaly_detection
+description: (revenue_like - cogs_like)/revenue_like should be between 0 and 0.9.
+evidence:
+  requires_intents: ["revenue_like","cogs_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "revenue_like - cogs_like"
+      denominator: "revenue_like"
+      low: 0.0
+      high: 0.9
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Check COGS mapping; heavy discounts or contra-revenue can affect apparent margin."
+version: "1.0.0"

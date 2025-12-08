@@ -1,0 +1,11 @@
+id: CROSS-R-125
+title: Cash Runway vs Spend & Hiring
+severity: block
+bucket: resilience
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(cfo.runway_months,1) < 0) & ( (pct_change(chro.headcount_total,1) > 0) | (pct_change(cmo.total_spend,1) > 0) )"
+      require_ratio_pass_pct: 0.5
+fix_tip: "Slow hiring/spend or raise capital before liquidity turns critical."

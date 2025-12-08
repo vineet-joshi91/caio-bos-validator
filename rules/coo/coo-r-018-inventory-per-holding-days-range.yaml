@@ -1,0 +1,16 @@
+id: COO-R-018
+title: Inventory Holding Days Range
+severity: warn
+bucket: resource_utilization
+description: Inventory holding days should remain within 15–120 days depending on product type.
+evidence:
+  requires_intents: ["inventory_days_like","period_like"]
+  checks:
+    - type: value_bounds
+      column: "inventory_days_like"
+      low: 15
+      high: 120
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If too high, accelerate sales or production; if too low, assess stockouts."
+version: "1.0.0"

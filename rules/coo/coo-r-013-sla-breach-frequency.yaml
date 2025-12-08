@@ -1,0 +1,18 @@
+id: COO-R-013
+title: SLA Breach Frequency
+severity: warn
+bucket: quality_sla
+description: SLA breach frequency should be ≤10% of total contracts/orders.
+evidence:
+  requires_intents: ["sla_breaches_like","contracts_total_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "sla_breaches_like"
+      denominator: "contracts_total_like"
+      low: 0.0
+      high: 0.10
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Reassess SLAs or root causes (capacity, dependencies, partner reliability)."
+version: "1.0.0"

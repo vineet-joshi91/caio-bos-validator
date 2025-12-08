@@ -1,0 +1,16 @@
+id: CHRO-R-010
+title: Gender Pay Gap (if available)
+severity: warn
+bucket: compensation_fairness
+description: Median salary gap between genders should be <20%.
+evidence:
+  requires_intents: ["salary_like","gender_like"]
+  checks:
+    - type: median_gap_bound
+      value: "salary_like"
+      group: "gender_like"
+      max_gap_pct: 0.20
+fallbacks:
+  on_missing_intents: "skip_with_info"
+fix_tip: "Audit bands and parity adjustments; ensure like-for-like role comparison."
+version: "1.0.0"

@@ -1,0 +1,18 @@
+id: COO-R-008
+title: On-Time Delivery Rate Bounds
+severity: warn
+bucket: process_cohesion
+description: On-time delivery rate should remain between 80% and 100%.
+evidence:
+  requires_intents: ["deliveries_on_time_like","deliveries_total_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "deliveries_on_time_like"
+      denominator: "deliveries_total_like"
+      low: 0.8
+      high: 1.0
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Re-evaluate logistics partners, lead times, or dispatch policies."
+version: "1.0.0"

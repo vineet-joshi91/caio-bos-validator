@@ -1,0 +1,17 @@
+id: CPO-R-001
+title: Resume-to-Business Role Generation
+severity: info
+bucket: talent_fit_generation
+description: Generate role titles and responsibilities that match a candidate’s resume with the company’s actual business context, structure, and budget.
+evidence:
+  requires_inputs: ["business_context","resume_parsed"]
+  checks:
+    - type: resume_business_match
+      resume_input: "resume_parsed"
+      business_snapshot: "business_context"
+      max_suggestions: 3
+      output_fields: ["title","responsibilities","reporting_to","expected_ctc","bfi_score"]
+fallbacks:
+  on_missing_inputs: "warn_low_confidence"
+fix_tip: "Provide company overview, department budgets, and org chart for sharper role suggestions."
+version: "1.0.0"

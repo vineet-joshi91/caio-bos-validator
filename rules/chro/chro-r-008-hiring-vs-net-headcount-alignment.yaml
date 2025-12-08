@@ -1,0 +1,19 @@
+id: CHRO-R-008
+title: Hiring vs Net Headcount Alignment
+severity: block
+bucket: movement_cohesion
+description: Net headcount change should align with hires and exits (± transfers) within 10%.
+evidence:
+  requires_intents: ["headcount_total_like","hires_like","exits_like","transfers_like","period_like"]
+  checks:
+    - type: headcount_flow_consistency
+      headcount: "headcount_total_like"
+      hires: "hires_like"
+      exits: "exits_like"
+      transfers: "transfers_like"
+      group_by: "period_like"
+      tolerance_abs: 0.10
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Cross-check offers-to-joiners and exit effective dates; update transfer logs."
+version: "1.0.0"

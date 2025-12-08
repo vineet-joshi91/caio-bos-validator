@@ -1,0 +1,16 @@
+id: COO-R-001
+title: Output–Input Consistency
+severity: block
+bucket: operational_integrity
+description: Total output should proportionally align with total input (within 10%) over each period.
+evidence:
+  requires_intents: ["output_units_like","input_units_like","period_like"]
+  checks:
+    - type: ratio_consistency
+      numerator: "output_units_like"
+      denominator: "input_units_like"
+      tolerance_abs: 0.10
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Check if production logs and resource entries match; confirm scrap and wastage accounting."
+version: "1.0.0"

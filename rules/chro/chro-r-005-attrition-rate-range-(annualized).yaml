@@ -1,0 +1,19 @@
+id: CHRO-R-005
+title: Attrition Rate Range (Annualized)
+severity: warn
+bucket: movement_cohesion
+description: Annualized attrition should typically be between 0% and 30% for non-seasonal orgs.
+evidence:
+  requires_intents: ["exits_like","headcount_total_like","period_like"]
+  checks:
+    - type: attrition_rate_bounds
+      exits: "exits_like"
+      headcount: "headcount_total_like"
+      period: "period_like"
+      annualize: true
+      low: 0.0
+      high: 0.30
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Validate exit classification and period coverage; seasonality may need annotation."
+version: "1.0.0"

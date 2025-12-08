@@ -1,0 +1,14 @@
+id: CPO-R-005
+title: Role CTC vs Band Consistency
+severity: warn
+bucket: budget_band_coherence
+description: Offered CTC should fall within the assigned compensation band for the level/grade.
+evidence:
+  requires_intents: ["offered_ctc_like","grade_band_min_like","grade_band_max_like"]
+  checks:
+    - type: value_in_range
+      value: "offered_ctc_like"
+      low_ref: "grade_band_min_like"
+      high_ref: "grade_band_max_like"
+fix_tip: "Review leveling framework and correct mapped bands; flag anomalies for CFO approval."
+version: "1.0.0"

@@ -1,0 +1,18 @@
+# cfo-r-007-net-income-coherence-intent.yaml
+id: CFO-R-007
+title: Net Income Coherence (Intent-Based)
+severity: warn
+bucket: integrity_consistency
+description: Verify net_income_like ≈ revenue_like - cogs_like - opex_like (within tolerance).
+evidence:
+  requires_intents: ["revenue_like","cogs_like","opex_like","net_income_like","period_like"]
+  checks:
+    - type: equation_intents_tolerance
+      expression: "net_income_like = revenue_like - cogs_like - opex_like"
+      group_by: "period_like"
+      tolerance_mode: "ratio_of_revenue_like"
+      tolerance_abs: 0.02
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If certain expense lines are bundled, add a note so we adjust interpretation."
+version: "1.0.0"

@@ -1,0 +1,16 @@
+id: COO-R-007
+title: Cycle Time Range
+severity: warn
+bucket: process_cohesion
+description: Average cycle time per order should fall between 0.5× and 2× its historical mean.
+evidence:
+  requires_intents: ["cycle_time_like","period_like"]
+  checks:
+    - type: rolling_mean_range
+      column: "cycle_time_like"
+      low_factor: 0.5
+      high_factor: 2.0
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Investigate bottlenecks, staffing, or supply delays if cycle time deviates heavily."
+version: "1.0.0"

@@ -1,0 +1,18 @@
+id: COO-R-016
+title: Resource Utilization Ratio
+severity: warn
+bucket: resource_utilization
+description: Active resource utilization should range between 60% and 95%.
+evidence:
+  requires_intents: ["resource_used_like","resource_available_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "resource_used_like"
+      denominator: "resource_available_like"
+      low: 0.6
+      high: 0.95
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Redistribute workload; idle or overworked teams lower throughput quality."
+version: "1.0.0"

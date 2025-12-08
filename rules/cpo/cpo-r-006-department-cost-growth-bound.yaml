@@ -1,0 +1,16 @@
+id: CPO-R-006
+title: Department Cost Growth Bound
+severity: warn
+bucket: budget_band_coherence
+description: Department total payroll post-hire should not exceed 20% growth vs pre-hire baseline.
+evidence:
+  requires_intents: ["department_payroll_before_like","department_payroll_after_like","department_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "department_payroll_after_like"
+      denominator: "department_payroll_before_like"
+      low: 1.0
+      high: 1.2
+      group_by: "department_like"
+fix_tip: "Balance new hires across departments; consider redeployment or automation options."
+version: "1.0.0"

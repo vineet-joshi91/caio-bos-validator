@@ -1,0 +1,20 @@
+id: COO-R-002
+title: Productivity Coherence (Per Employee)
+severity: warn
+bucket: operational_integrity
+description: Output per employee should not drop or spike >25% compared to its rolling mean.
+evidence:
+  requires_intents: ["output_units_like","headcount_like","period_like"]
+  checks:
+    - type: derived_metric
+      name: "output_per_employee"
+      expression: "output_units_like / max(headcount_like,1e-9)"
+      group_by: "period_like"
+    - type: deviation_from_rolling_mean
+      column: "output_per_employee"
+      window: 3
+      max_dev_pct: 0.25
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Investigate absenteeism, training gaps, or machine downtime causing fluctuations."
+version: "1.0.0"

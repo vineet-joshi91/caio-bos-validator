@@ -1,0 +1,13 @@
+id: CFO-R-008
+title: Period Continuity Gaps
+severity: warn
+bucket: period_cohesion
+description: Detect large gaps (>6 months) between consecutive reporting periods.
+evidence:
+  requires_intents: ["period_like"]
+  checks:
+    - type: period_gap_check
+      column: "period_like"
+      max_gap_months: 6
+fix_tip: "Upload intermediate months or quarters; long gaps reduce accuracy."
+version: "1.0.0"

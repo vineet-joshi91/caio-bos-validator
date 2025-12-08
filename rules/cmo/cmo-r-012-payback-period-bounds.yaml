@@ -1,0 +1,16 @@
+id: CMO-R-012
+title: Payback Period Bounds
+severity: warn
+bucket: economics_efficiency
+description: Payback period should be within 0–24 months for typical SMB/Mid-market motions.
+evidence:
+  requires_intents: ["payback_months_like","period_like"]
+  checks:
+    - type: value_bounds
+      column: "payback_months_like"
+      low: 0
+      high: 24
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Long payback indicates high CAC or slow monetization; consider pricing or funnel fixes."
+version: "1.0.0"

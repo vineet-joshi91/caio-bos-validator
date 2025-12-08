@@ -1,0 +1,14 @@
+id: CHRO-R-019
+title: Duplicate Employee IDs
+severity: block
+bucket: policy_compliance
+description: Employee IDs must be unique across active datasets.
+evidence:
+  requires_intents: ["employee_id_like"]
+  checks:
+    - type: duplicate_values
+      column: "employee_id_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Resolve ghost/duplicate profiles; ensure canonical HRIS is the single source of truth."
+version: "1.0.0"

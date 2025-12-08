@@ -1,0 +1,18 @@
+id: CMO-R-014
+title: Organic vs Paid Balance
+severity: warn
+bucket: economics_efficiency
+description: Paid-driven leads or revenue should not permanently exceed 90% without strategic justification.
+evidence:
+  requires_intents: ["paid_contrib_like","total_contrib_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "paid_contrib_like"
+      denominator: "total_contrib_like"
+      low: 0.0
+      high: 0.9
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "skip_with_info"
+fix_tip: "Over-reliance on paid may hurt margins; invest in SEO/Brand/Partnership flywheels."
+version: "1.0.0"

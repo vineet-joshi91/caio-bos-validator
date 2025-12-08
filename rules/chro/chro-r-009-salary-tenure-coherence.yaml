@@ -1,0 +1,16 @@
+id: CHRO-R-009
+title: Salary–Tenure Coherence
+severity: warn
+bucket: compensation_fairness
+description: Average salary should not decrease as tenure increases (corr should not be negative beyond -0.2).
+evidence:
+  requires_intents: ["salary_like","tenure_like"]
+  checks:
+    - type: correlation_threshold
+      x: "tenure_like"
+      y: "salary_like"
+      min_corr: -0.2
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Check grade mapping and salary bands; junior-heavy raises or demotions may invert patterns."
+version: "1.0.0"

@@ -1,0 +1,11 @@
+id: CROSS-R-121
+title: Revenue per Employee vs Hiring Velocity
+severity: warn
+bucket: productivity
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(chro.headcount_total,1) > 0) -> (pct_change(cfo.booked_revenue/(chro.headcount_total+1e-9),1) >= 0)"
+      require_ratio_pass_pct: 0.65
+fix_tip: "Guard productivity—balance hiring with automation."

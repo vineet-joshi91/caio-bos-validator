@@ -1,0 +1,13 @@
+id: CROSS-R-106
+title: New-Hire Payroll Impact on Runway
+severity: warn
+bucket: resilience
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      mode: "numeric<=threshold"
+      expr: "abs(cfo.runway_months - cfo.runway_months_excl_new_hires)"
+      threshold: 2
+      require_ratio_pass_pct: 0.8
+fix_tip: "If runway drops >2 months due to new hires, stagger start dates or re-sequence roles."

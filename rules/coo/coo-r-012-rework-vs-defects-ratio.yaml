@@ -1,0 +1,18 @@
+id: COO-R-012
+title: Rework vs Defects Ratio
+severity: warn
+bucket: quality_sla
+description: Rework count should not exceed 80% of defect count.
+evidence:
+  requires_intents: ["rework_like","defects_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "rework_like"
+      denominator: "defects_like"
+      low: 0.0
+      high: 0.8
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Excessive rework implies process patching instead of root-cause fixes."
+version: "1.0.0"

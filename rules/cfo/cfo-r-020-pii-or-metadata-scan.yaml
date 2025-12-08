@@ -1,0 +1,12 @@
+id: CFO-R-020
+title: PII / Metadata Scan
+severity: warn
+bucket: privacy_compliance
+description: Financial uploads should not contain personal identifiers or metadata.
+evidence:
+  requires_intents: ["table_any"]
+  checks:
+    - type: pii_scan
+      tables: ["*"]
+fix_tip: "Remove employee names, emails, or IDs from numeric sheets."
+version: "1.0.0"

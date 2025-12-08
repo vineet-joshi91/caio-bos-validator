@@ -1,0 +1,92 @@
+# High-level text building blocks for each brain; pick lines based on index/bucket levels.
+# Levels: high (>=85), medium (>=60), low (<60)
+
+CFO:
+  topline:
+    high: "Finance data quality is strong; core statements appear consistent and reliable."
+    medium: "Finance shows moderate data issues; review flagged periods and mappings."
+    low: "Significant finance data issues detected; fix blocking items before analysis."
+  integrity_consistency:
+    high: "Balance sheet identity holds across periods."
+    medium: "Minor inconsistencies in ledger relationships were found."
+    low: "Balance sheet identity breaks; reclassify or correct exports."
+  value_sanity:
+    high: "Key values are in expected ranges with no major outliers."
+    medium: "Occasional outliers suggest mapping or timing differences."
+    low: "Multiple negatives/outliers indicate export or sign issues."
+  period_alignment:
+    high: "Statements share a consistent reporting cadence."
+    medium: "Some misalignments across P&L and cashflow periods."
+    low: "Periods are misaligned; normalize cadence before analysis."
+
+CMO:
+  topline:
+    high: "Marketing performance tables look consistent and actionable."
+    medium: "Data is usable with caution; review spend/revenue outliers."
+    low: "Marketing data integrity is weak; fix schema/alignment first."
+  schema_presence:
+    high: "All key columns (period, channel, spend, revenue) are present."
+    medium: "Minor column gaps detected; re-export recommended."
+    low: "Missing core columns; cannot compute reliable KPIs."
+  value_sanity:
+    high: "Spend and revenue values are generally sensible."
+    medium: "Some periods show abnormal ROAS; verify attribution."
+    low: "Frequent zero/negative denominators and extreme ROAS outliers."
+  period_alignment:
+    high: "Marketing and Finance periods align well."
+    medium: "Some cadence mismatches; reconcile monthly vs quarterly."
+    low: "Periods don’t align; harmonize reporting windows."
+
+COO:
+  topline:
+    high: "Ops KPIs and SOPs appear consistent and trackable."
+    medium: "Ops data has minor gaps; review SLA breaches and sequences."
+    low: "Ops data is disjointed; fix SOP/KPI structures and cadence."
+  schema_presence:
+    high: "SOP/KPI tables include the required columns."
+    medium: "Some SOP/KPI fields missing; re-export recommended."
+    low: "Critical SOP/KPI columns missing; analysis blocked."
+  value_sanity:
+    high: "SLA breach rates and KPIs look reasonable."
+    medium: "Some unusual breach rates; validate thresholds."
+    low: "Percentages or KPIs appear mis-scaled or negative."
+  period_alignment:
+    high: "SOP and KPI periods are consistent."
+    medium: "Occasional gaps; ensure continuous monthly data."
+    low: "Periods are inconsistent; align SOP and KPI timelines."
+
+CHRO:
+  topline:
+    high: "HR headcount and compensation data are consistent."
+    medium: "HR data usable with caveats; check attrition/hires spikes."
+    low: "HR data integrity is low; fix schema and period alignment."
+  schema_presence:
+    high: "Core HR tables contain required columns."
+    medium: "Some fields missing; re-export headcount or comp data."
+    low: "Critical HR fields missing; analysis blocked."
+  value_sanity:
+    high: "Counts and payroll values are within expected ranges."
+    medium: "Intermittent anomalies (e.g., negative or spikes)."
+    low: "Frequent negatives or impossible values detected."
+  period_alignment:
+    high: "Headcount and comp periods align."
+    medium: "Minor misalignments across HR tables."
+    low: "Periods are unaligned; normalize cadence."
+
+CPO:
+  topline:
+    high: "Procurement data looks consistent across vendors and POs."
+    medium: "Procurement data has minor gaps; verify spend vs PO totals."
+    low: "Vendor/PO integrity is weak; fix columns and cadence."
+  schema_presence:
+    high: "Vendor and PO tables include required fields."
+    medium: "Some vendor/PO columns missing."
+    low: "Missing required fields; cannot validate procurement KPIs."
+  value_sanity:
+    high: "Spend/amount and quality/on-time values are reasonable."
+    medium: "Outliers or mis-scaled percentages present."
+    low: "Negative/invalid values; verify exports and scaling."
+  period_alignment:
+    high: "Vendor and PO periods align well."
+    medium: "Some alignment gaps; reconcile reporting cycles."
+    low: "Periods don’t align; harmonize cadence before analysis."

@@ -1,0 +1,13 @@
+id: CROSS-R-117
+title: Forecast vs Actuals Integrity
+severity: warn
+bucket: planning
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      mode: "numeric<=threshold"
+      expr: "abs(cfo.revenue_forecast - cfo.booked_revenue) / (cfo.booked_revenue + 1e-9)"
+      threshold: 0.2
+      require_ratio_pass_pct: 0.7
+fix_tip: "Synchronize FP&A assumptions with live sales pipeline."

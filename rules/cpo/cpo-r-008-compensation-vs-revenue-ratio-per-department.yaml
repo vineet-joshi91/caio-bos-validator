@@ -1,0 +1,16 @@
+id: CPO-R-008
+title: Compensation vs Revenue Ratio per Department
+severity: warn
+bucket: budget_band_coherence
+description: Payroll-to-revenue ratio for each department should remain below 0.3 unless approved.
+evidence:
+  requires_intents: ["department_payroll_like","department_revenue_like","department_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "department_payroll_like"
+      denominator: "department_revenue_like"
+      low: 0.0
+      high: 0.3
+      group_by: "department_like"
+fix_tip: "Recheck allocations or transfer underutilized employees; flag CFO for exceptions."
+version: "1.0.0"

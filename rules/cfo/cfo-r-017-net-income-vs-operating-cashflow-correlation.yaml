@@ -1,0 +1,14 @@
+id: CFO-R-017
+title: Net Income vs Operating Cashflow Correlation
+severity: warn
+bucket: integrity_consistency
+description: Correlation between net income and operating cashflow should exceed 0.2.
+evidence:
+  requires_intents: ["net_income_like","operating_cf_like","period_like"]
+  checks:
+    - type: trend_correlation_intents
+      left: { column: "net_income_like" }
+      right: { column: "operating_cf_like" }
+      min_corr: 0.2
+fix_tip: "Investigate accruals or revenue recognition timing."
+version: "1.0.0"

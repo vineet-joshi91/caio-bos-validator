@@ -1,0 +1,12 @@
+id: CFO-R-007
+title: Fiscal Close Snapshot Exists
+severity: warn
+bucket: period_cohesion
+description: Ensure at least one year-end or fiscal-close period is present.
+evidence:
+  requires_intents: ["period_like"]
+  checks:
+    - type: fiscal_year_close_present
+      period_column: "period_like"
+fix_tip: "Include December or your fiscal year-end snapshot for reconciliation."
+version: "1.0.0"

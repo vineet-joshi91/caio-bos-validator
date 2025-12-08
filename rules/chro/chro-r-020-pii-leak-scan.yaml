@@ -1,0 +1,14 @@
+id: CHRO-R-020
+title: PII Leak Scan (HR Data)
+severity: warn
+bucket: policy_compliance
+description: Analytics sheets should not contain PII (emails, phone numbers, addresses).
+evidence:
+  requires_intents: ["table_any"]
+  checks:
+    - type: pii_scan
+      tables: ["*"]
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Keep PII in secured profiles; anonymize analytics exports."
+version: "1.0.0"

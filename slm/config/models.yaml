@@ -1,0 +1,39 @@
+defaults:
+  engine: ollama
+  base_url: http://127.0.0.1:11434
+  timeout_sec: 120
+  num_predict: 192
+  temperature: 0.2
+  top_p: 0.9
+  repeat_penalty: 1.05
+
+brains:
+  cfo:
+    model_path: qwen2.5:1.5b-instruct
+    num_predict: 192
+    timeout_sec: 120
+
+  cmo:
+    model_path: qwen2.5:0.5b-instruct
+    num_predict: 160
+    timeout_sec: 90
+
+  coo:
+    model_path: qwen2.5:0.5b-instruct
+    num_predict: 160
+    timeout_sec: 90
+
+  chro:
+    model_path: qwen2.5:0.5b-instruct
+    num_predict: 160
+    timeout_sec: 90
+
+  cpo:
+    model_path: qwen2.5:0.5b-instruct
+    num_predict: 160
+    timeout_sec: 90
+
+  ea:
+    model_path: qwen2.5:1.5b-instruct
+    num_predict: 256
+    timeout_sec: 120

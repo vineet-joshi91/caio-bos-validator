@@ -1,0 +1,11 @@
+id: CROSS-R-112
+title: Inventory Drag on Operating Cashflow
+severity: warn
+bucket: working_capital
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(coo.inventory_holding_days,1) > 0) & (pct_change(cfo.operating_cashflow,1) < 0)"
+      require_ratio_pass_pct: 0.6
+fix_tip: "Reduce slow movers, tighten reorder points, negotiate supplier terms."

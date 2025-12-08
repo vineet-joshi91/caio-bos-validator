@@ -1,0 +1,16 @@
+id: COO-R-005
+title: Throughput Stability
+severity: warn
+bucket: process_cohesion
+description: Output volume variance should remain within ±20% of rolling mean.
+evidence:
+  requires_intents: ["output_units_like","period_like"]
+  checks:
+    - type: deviation_from_rolling_mean
+      column: "output_units_like"
+      window: 3
+      max_dev_pct: 0.20
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Large spikes or dips may indicate process bottlenecks or underreporting."
+version: "1.0.0"

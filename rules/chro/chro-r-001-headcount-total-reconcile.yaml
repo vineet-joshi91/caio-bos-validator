@@ -1,0 +1,17 @@
+id: CHRO-R-001
+title: Headcount Totals Reconcile
+severity: block
+bucket: workforce_integrity
+description: Company headcount should approximate the sum of department headcounts within 2%.
+evidence:
+  requires_intents: ["headcount_total_like","headcount_by_dept_like","department_like","period_like"]
+  checks:
+    - type: sum_reconciliation_intents
+      total: "headcount_total_like"
+      parts: ["headcount_by_dept_like"]
+      group_by: "period_like"
+      tolerance_abs: 0.02
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Reconcile department snapshots and roll-ups; ensure transfers are not double-counted."
+version: "1.0.0"

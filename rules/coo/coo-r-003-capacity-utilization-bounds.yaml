@@ -1,0 +1,18 @@
+id: COO-R-003
+title: Capacity Utilization Bounds
+severity: warn
+bucket: operational_integrity
+description: Capacity utilization should stay between 50% and 100%.
+evidence:
+  requires_intents: ["capacity_used_like","capacity_available_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "capacity_used_like"
+      denominator: "capacity_available_like"
+      low: 0.5
+      high: 1.0
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Underutilization may mean overstaffing or low demand; overutilization risks burnout or quality loss."
+version: "1.0.0"

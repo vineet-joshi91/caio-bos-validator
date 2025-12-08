@@ -1,0 +1,14 @@
+id: COO-R-009
+title: Backlog Volume Stability
+severity: warn
+bucket: process_cohesion
+description: Backlog volume should not increase for ≥3 consecutive periods.
+evidence:
+  requires_intents: ["backlog_volume_like","period_like"]
+  checks:
+    - type: conditional_trend_flag_intents
+      left: { column: "backlog_volume_like", condition: "increasing_3_of_4" }
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Address demand-supply imbalance or scheduling inefficiencies."
+version: "1.0.0"

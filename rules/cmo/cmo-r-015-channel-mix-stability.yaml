@@ -1,0 +1,18 @@
+id: CMO-R-015
+title: Channel Mix Stability
+severity: warn
+bucket: channel_integrity
+description: Channel share of spend should not swing by >30% of its baseline in a single period (except launches).
+evidence:
+  requires_intents: ["spend_by_channel_like","total_spend_like","channel_like","period_like"]
+  checks:
+    - type: mix_change_bounds
+      part: "spend_by_channel_like"
+      total: "total_spend_like"
+      key: "channel_like"
+      period: "period_like"
+      max_change_pct_of_baseline: 0.30
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Large swings need annotation (new geo, product launch, crisis response)."
+version: "1.0.0"

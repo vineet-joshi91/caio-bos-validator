@@ -1,0 +1,16 @@
+id: CHRO-R-016
+title: Training–Performance Effect
+severity: warn
+bucket: engagement_enablement
+description: Post-training performance should trend positive (corr with score delta > 0).
+evidence:
+  requires_intents: ["training_hours_like","performance_score_like","period_like"]
+  checks:
+    - type: correlation_threshold
+      x: "training_hours_like"
+      y: "performance_score_like"
+      min_corr: 0.0
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If no uplift, revisit curriculum and on-the-job enablement; consider lagged effect."
+version: "1.0.0"

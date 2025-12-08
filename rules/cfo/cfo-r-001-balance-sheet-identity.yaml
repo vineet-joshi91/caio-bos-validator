@@ -1,0 +1,19 @@
+# cfo-r-001-balance-sheet-identity-intent.yaml
+id: CFO-R-001
+title: Balance Sheet Identity (Intent-Based)
+severity: block
+bucket: integrity_consistency
+description: Find columns that behave like Assets, Liabilities, Equity; check A = L + E per period.
+evidence:
+  requires_intents: ["assets_like", "liabilities_like", "equity_like", "period_like"]
+  checks:
+    - type: equation_intents
+      left: "assets_like"
+      right_sum: ["liabilities_like","equity_like"]
+      group_by: "period_like"
+      tolerance_mode: "ratio_of_left"
+      tolerance_abs: 0.01
+fallbacks:
+  on_missing_intents: "warn_low_confidence"   # don’t block; report what’s missing
+fix_tip: "If mapping is ambiguous, add a short note like 'Equity = Share Capital + Retained Earnings'. No reformatting needed."
+version: "1.0.0"

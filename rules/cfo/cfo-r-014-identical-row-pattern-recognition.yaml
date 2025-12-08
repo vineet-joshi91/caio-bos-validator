@@ -1,0 +1,12 @@
+id: CFO-R-014
+title: Identical Row Pattern Repetition
+severity: block
+bucket: anomaly_detection
+description: Two or more consecutive periods share identical numeric values.
+evidence:
+  requires_intents: ["revenue_like","cogs_like","opex_like","net_income_like","period_like"]
+  checks:
+    - type: identical_rows_across_periods
+      min_consecutive: 2
+fix_tip: "Confirm data refresh; duplicated rows reduce credibility."
+version: "1.0.0"

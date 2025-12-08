@@ -1,0 +1,17 @@
+id: CHRO-R-012
+title: Promotion vs Tenure Sanity
+severity: warn
+bucket: compensation_fairness
+description: Promotion rate should increase with tenure (positive monotonic trend expected).
+evidence:
+  requires_intents: ["tenure_like","promotion_flag_like","period_like"]
+  checks:
+    - type: promotion_rate_trend
+      tenure: "tenure_like"
+      promoted: "promotion_flag_like"
+      period: "period_like"
+      min_trend_slope: 0.0
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Review promotion criteria; ensure data captures acting roles and career ladders."
+version: "1.0.0"

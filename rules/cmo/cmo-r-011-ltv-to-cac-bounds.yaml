@@ -1,0 +1,18 @@
+id: CMO-R-011
+title: LTV:CAC Bounds
+severity: warn
+bucket: economics_efficiency
+description: LTV:CAC should typically fall between 1:1 and 10:1.
+evidence:
+  requires_intents: ["ltv_like","cac_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "ltv_like"
+      denominator: "cac_like"
+      low: 1.0
+      high: 10.0
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If below 1:1, re-evaluate pricing or audience; if above 10:1, under-investment may exist."
+version: "1.0.0"

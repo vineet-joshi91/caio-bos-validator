@@ -1,0 +1,15 @@
+id: CHRO-R-006
+title: Flat Attrition Pattern Detection
+severity: warn
+bucket: movement_cohesion
+description: Identical attrition values across ≥3 periods suggests stale or fabricated data.
+evidence:
+  requires_intents: ["exits_like","period_like"]
+  checks:
+    - type: identical_rows_across_periods
+      column: "exits_like"
+      min_consecutive: 3
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Re-export exits per period from HRIS; ensure backfills and delayed exits are captured."
+version: "1.0.0"

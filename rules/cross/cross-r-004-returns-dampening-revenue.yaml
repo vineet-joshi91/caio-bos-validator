@@ -1,0 +1,11 @@
+id: CROSS-R-104
+title: Returns Dampening Revenue Despite Order Growth
+severity: warn
+bucket: leakage
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(coo.orders_completed,1) > 0) & (pct_change(coo.returns_count,1) > 0) & (pct_change(cfo.booked_revenue,1) <= 0)"
+      require_ratio_pass_pct: 0.5
+fix_tip: "Audit post-delivery defects/returns; tighten QA and packaging."

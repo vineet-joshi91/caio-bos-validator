@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cashflow",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "period": {
+        "type": "string"
+      },
+      "cash_in": {
+        "type": "number"
+      },
+      "cash_out": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "period",
+      "cash_in",
+      "cash_out"
+    ]
+  }
+}

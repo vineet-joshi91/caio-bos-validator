@@ -1,0 +1,59 @@
+{
+  "plan": {
+    "assumptions": [
+      "Ensure all financial data is up-to-date and accurate."
+    ],
+    "priorities": [
+      "Fix Balance Sheet Identity",
+      "Verify Net Income Coherence",
+      "Reconcile Cash Flow"
+    ],
+    "queries_to_run": [
+      "Check Balance Sheet Identity",
+      "Verify Net Income Coherence",
+      "Reconcile Cash Flow"
+    ],
+    "data_gaps": [
+      "cash_end (closing cash balance)",
+      "monthly_burn (absolute)",
+      "revenue, cogs for gross_margin",
+      "total_debt, equity for D/E"
+    ]
+  },
+  "recommendation": {
+    "summary": "Ensure all financial data is up-to-date and accurate.",
+    "actions_7d": "- Review Balance Sheet Identity\n- Verify Net Income Coherence\n- Reconcile Cash Flow",
+    "actions_30d": "- Update Financial Data\n- Analyze Trends\n- Prepare for Next Reporting Period",
+    "kpis_to_watch": [
+      "Balance Sheet Identity",
+      "Net Income Coherence",
+      "Cash Flow Reconciliation"
+    ],
+    "risks": [
+      "Data inconsistencies may lead to incorrect financial analysis."
+    ],
+    "forecast_note": "Ensure all financial data is up-to-date for accurate analysis."
+  },
+  "confidence": 0.8,
+  "tools_used": [
+    "Balance Sheet Identity",
+    "Net Income Coherence",
+    "Cash Flow Reconciliation"
+  ],
+  "tools": {
+    "metrics": {
+      "runway_months": null,
+      "gross_margin": null,
+      "current_ratio": null,
+      "debt_to_equity": null,
+      "dso_days": null,
+      "dpo_days": null
+    },
+    "needs": [
+      "cash_end (closing cash balance)",
+      "monthly_burn (absolute)",
+      "revenue, cogs for gross_margin",
+      "total_debt, equity for D/E"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: caio-bos-api
+    rootDir: .
+    env: python
+    plan: starter
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api_server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: OLLAMA_HOST
+        value: http://127.0.0.1:11434

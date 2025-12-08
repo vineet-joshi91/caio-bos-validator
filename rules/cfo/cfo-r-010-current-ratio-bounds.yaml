@@ -1,0 +1,16 @@
+id: CFO-R-010
+title: Current Ratio Bounds
+severity: warn
+bucket: financial_reasonableness
+description: Current ratio (current assets / current liabilities) should fall between 0.5 and 5.0.
+evidence:
+  requires_intents: ["current_assets_like","current_liabilities_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "current_assets_like"
+      denominator: "current_liabilities_like"
+      low: 0.5
+      high: 5.0
+      group_by: "period_like"
+fix_tip: "Review working-capital mapping; reclassify short-term borrowings if needed."
+version: "1.0.0"

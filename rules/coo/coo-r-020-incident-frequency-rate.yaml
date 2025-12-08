@@ -1,0 +1,20 @@
+id: COO-R-020
+title: Incident Frequency Rate
+severity: warn
+bucket: continuity_safety
+description: Workplace incidents per 100 employees should be under 2 per year.
+evidence:
+  requires_intents: ["incident_count_like","headcount_like","period_like"]
+  checks:
+    - type: derived_metric
+      name: "incident_rate"
+      expression: "(incident_count_like / max(headcount_like,1e-9)) * 100"
+      group_by: "period_like"
+    - type: value_bounds
+      column: "incident_rate"
+      low: 0.0
+      high: 2.0
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Increase safety audits, PPE compliance, and supervisor training frequency."
+version: "1.0.0"

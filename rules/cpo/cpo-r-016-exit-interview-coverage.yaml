@@ -1,0 +1,15 @@
+id: CPO-R-016
+title: Exit Interview Coverage
+severity: warn
+bucket: process_compliance
+description: Exit interviews should be recorded for ≥80% of employee separations.
+evidence:
+  requires_intents: ["exit_interviews_done_like","exits_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "exit_interviews_done_like"
+      denominator: "exits_like"
+      low: 0.8
+      high: 1.0
+fix_tip: "Encourage structured feedback on all exits; store results in HR analytics folder."
+version: "1.0.0"

@@ -1,0 +1,21 @@
+# --- core ---
+pandas
+numpy
+pyyaml
+python-docx
+pypdf
+openpyxl
+requests
+regex
+python-multipart
+
+# --- ui & api ---
+fastapi
+uvicorn[standard]
+pydantic>=2
+requests
+
+sqlalchemy
+psycopg2-binary
+razorpay
+python-dotenv

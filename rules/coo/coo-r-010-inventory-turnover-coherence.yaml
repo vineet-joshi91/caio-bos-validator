@@ -1,0 +1,16 @@
+id: COO-R-010
+title: Inventory Turnover Coherence
+severity: warn
+bucket: process_cohesion
+description: Inventory turnover should correlate positively with order completion (corr > 0.2).
+evidence:
+  requires_intents: ["inventory_turnover_like","orders_completed_like","period_like"]
+  checks:
+    - type: trend_correlation_intents
+      left: "inventory_turnover_like"
+      right: "orders_completed_like"
+      min_corr: 0.2
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If correlation breaks, investigate inventory accuracy or overstocking."
+version: "1.0.0"

@@ -1,0 +1,13 @@
+id: CROSS-R-115
+title: Paid vs Organic Balance
+severity: warn
+bucket: marketing_mix
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      mode: "numeric<=threshold"
+      expr: "cmo.spend_paid / (cmo.revenue_organic + cmo.revenue_paid + 1e-9)"
+      threshold: 0.7
+      require_ratio_pass_pct: 0.7
+fix_tip: "If paid >70% of mix, scale organic to reduce CAC dependency."

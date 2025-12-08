@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PnL",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "period": {
+        "type": "string"
+      },
+      "revenue": {
+        "type": "number"
+      },
+      "cogs": {
+        "type": "number"
+      },
+      "opex": {
+        "type": "number"
+      },
+      "net_income": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "period",
+      "revenue",
+      "cogs",
+      "opex",
+      "net_income"
+    ]
+  }
+}

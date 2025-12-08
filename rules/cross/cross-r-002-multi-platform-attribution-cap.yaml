@@ -1,0 +1,13 @@
+id: CROSS-R-102
+title: Multi-Platform Attribution ≤ Booked Revenue
+severity: warn
+bucket: reconciliation
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      mode: "numeric<=threshold"
+      expr: "abs((cmo.attributed_revenue_fb + cmo.attributed_revenue_gg + cmo.attributed_revenue_li) - cfo.booked_revenue) / (cfo.booked_revenue + 1e-9)"
+      threshold: 0.10
+      require_ratio_pass_pct: 0.8
+fix_tip: "Tighten dedup & MTA settings across platforms; align CRM close dates with finance recognition."

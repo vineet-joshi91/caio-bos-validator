@@ -1,0 +1,19 @@
+id: CFO-R-013
+title: Period-to-Period Change Sanity
+severity: warn
+bucket: anomaly_detection
+description: Key metrics should change by at least ±1 % between periods.
+evidence:
+  requires_intents: ["revenue_like","cogs_like","net_income_like","period_like"]
+  checks:
+    - type: pct_change_range
+      column: "revenue_like"
+      min_abs_pct: 0.01
+    - type: pct_change_range
+      column: "cogs_like"
+      min_abs_pct: 0.01
+    - type: pct_change_range
+      column: "net_income_like"
+      min_abs_pct: 0.01
+fix_tip: "Identical consecutive periods usually indicate placeholders or copy-paste."
+version: "1.0.0"

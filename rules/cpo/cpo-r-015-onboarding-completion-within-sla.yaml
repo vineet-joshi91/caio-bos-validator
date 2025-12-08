@@ -1,0 +1,14 @@
+id: CPO-R-015
+title: Onboarding Completion within SLA
+severity: warn
+bucket: process_compliance
+description: All onboarding processes must complete within 30 days of joining.
+evidence:
+  requires_intents: ["onboarding_days_like"]
+  checks:
+    - type: value_bounds
+      column: "onboarding_days_like"
+      low: 0
+      high: 30
+fix_tip: "Follow up delayed cases; streamline IT access and documentation setup."
+version: "1.0.0"

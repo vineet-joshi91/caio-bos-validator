@@ -1,0 +1,19 @@
+# cfo-r-008-cash-recon-intent.yaml
+id: CFO-R-008
+title: Cash Reconciliation (Intent-Based)
+severity: block
+bucket: integrity_consistency
+description: cash_end_like ≈ cash_beg_like + operating_cf_like + investing_cf_like + financing_cf_like.
+evidence:
+  requires_intents: ["cash_beg_like","cash_end_like","operating_cf_like","investing_cf_like","financing_cf_like","period_like"]
+  checks:
+    - type: equation_intents
+      left: "cash_end_like"
+      right_sum: ["cash_beg_like","operating_cf_like","investing_cf_like","financing_cf_like"]
+      group_by: "period_like"
+      tolerance_mode: "ratio_of_left"
+      tolerance_abs: 0.01
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If FX effects or bank charges are separate, annotate so we include them in analysis."
+version: "1.0.0"

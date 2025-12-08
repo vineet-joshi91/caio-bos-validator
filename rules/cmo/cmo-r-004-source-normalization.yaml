@@ -1,0 +1,16 @@
+id: CMO-R-004
+title: Source/Medium Normalization
+severity: warn
+bucket: channel_integrity
+description: UTM source/medium strings should map consistently to channels (no many-to-one conflicts).
+evidence:
+  requires_intents: ["source_like","medium_like","channel_like"]
+  checks:
+    - type: mapping_consistency
+      left_key: ["source_like","medium_like"]
+      right_key: "channel_like"
+      max_conflict_rate: 0.05
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Harden UTM governance; add transformation rules for known aliases (e.g., cpc→paid_search)."
+version: "1.0.0"

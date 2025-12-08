@@ -1,0 +1,15 @@
+id: CPO-R-002
+title: Approved Positions Reconciliation
+severity: block
+bucket: hiring_integrity
+description: Active openings must reconcile with CFO-approved headcount budget within 2%.
+evidence:
+  requires_intents: ["approved_positions_like","active_openings_like","period_like"]
+  checks:
+    - type: sum_reconciliation_intents
+      total: "approved_positions_like"
+      parts: ["active_openings_like"]
+      tolerance_abs: 0.02
+      group_by: "period_like"
+fix_tip: "Align requisition lists with finance-approved headcount; close unbudgeted postings."
+version: "1.0.0"

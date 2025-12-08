@@ -1,0 +1,16 @@
+id: CFO-R-011
+title: Debt-to-Equity Bounds
+severity: warn
+bucket: financial_reasonableness
+description: Debt-to-equity ratio should typically remain between 0 and 3.0 for non-financial entities.
+evidence:
+  requires_intents: ["total_debt_like","equity_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "total_debt_like"
+      denominator: "equity_like"
+      low: 0.0
+      high: 3.0
+      group_by: "period_like"
+fix_tip: "Check classification of shareholder loans or convertible debt."
+version: "1.0.0"

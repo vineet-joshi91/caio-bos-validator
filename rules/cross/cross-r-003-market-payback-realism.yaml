@@ -1,0 +1,13 @@
+id: CROSS-R-103
+title: Marketing Payback Realism
+severity: warn
+bucket: efficiency
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      mode: "numeric<=threshold"
+      expr: "(cmo.total_spend / (cfo.booked_revenue_rolling3 + 1e-9))"
+      threshold: 0.6
+      require_ratio_pass_pct: 0.7
+fix_tip: "If spend/revenue stays >0.6 across 3 months, rebalance channels or pacing."

@@ -1,0 +1,13 @@
+id: CFO-R-016
+title: Revenue-Cashflow Divergence
+severity: warn
+bucket: integrity_consistency
+description: Rising revenue with falling operating cashflow for ≥3 of 4 periods indicates collection issues.
+evidence:
+  requires_intents: ["revenue_like","operating_cf_like","period_like"]
+  checks:
+    - type: conditional_trend_flag_intents
+      left: { column: "revenue_like", condition: "increasing_3_of_4" }
+      right: { column: "operating_cf_like", condition: "decreasing_3_of_4" }
+fix_tip: "Review receivables and credit terms; tighten collections policy."
+version: "1.0.0"

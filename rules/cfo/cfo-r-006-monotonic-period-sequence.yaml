@@ -1,0 +1,12 @@
+id: CFO-R-006
+title: Monotonic Period Sequence
+severity: warn
+bucket: period_cohesion
+description: Periods should progress forward with no gaps or reversals.
+evidence:
+  requires_intents: ["period_like"]
+  checks:
+    - type: monotonic_time_intents
+      column: "period_like"
+fix_tip: "Re-export reports chronologically; fill missing months or quarters."
+version: "1.0.0"

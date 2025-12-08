@@ -1,0 +1,16 @@
+id: CPO-R-003
+title: Offer-to-Join Flow Consistency
+severity: warn
+bucket: hiring_integrity
+description: Offers accepted and joined employees should match within 10% for a given period.
+evidence:
+  requires_intents: ["offers_released_like","offers_joined_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "offers_joined_like"
+      denominator: "offers_released_like"
+      low: 0.9
+      high: 1.1
+      group_by: "period_like"
+fix_tip: "Investigate dropouts or delayed joins; sync ATS and payroll dates."
+version: "1.0.0"

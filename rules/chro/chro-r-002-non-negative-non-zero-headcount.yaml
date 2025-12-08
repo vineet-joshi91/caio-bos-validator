@@ -1,0 +1,20 @@
+id: CHRO-R-002
+title: Non-Negative / Non-Zero Headcount
+severity: block
+bucket: workforce_integrity
+description: No department should report negative or zero headcount for active periods.
+evidence:
+  requires_intents: ["headcount_by_dept_like","department_like","period_like"]
+  checks:
+    - type: non_negative
+      table_intent: "headcount_by_dept_like"
+      columns: ["headcount_by_dept_like"]
+    - type: min_value
+      table_intent: "headcount_by_dept_like"
+      column: "headcount_by_dept_like"
+      min: 1
+      group_by: ["department_like","period_like"]
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Validate empty or merged departments; collapse truly empty units or mark as inactive."
+version: "1.0.0"

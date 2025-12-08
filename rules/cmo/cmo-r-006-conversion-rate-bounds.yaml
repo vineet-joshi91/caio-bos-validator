@@ -1,0 +1,19 @@
+id: CMO-R-006
+title: Conversion Rate Bounds (Click→Lead)
+severity: warn
+bucket: funnel_cohesion
+description: Lead conversion rate from clicks should be within plausible limits.
+evidence:
+  requires_intents: ["clicks_like","leads_like","period_like","channel_like"]
+  checks:
+    - type: ratio_bounds_intents_grouped
+      numerator: "leads_like"
+      denominator: "clicks_like"
+      group_by: "channel_like"
+      defaults:
+        low: 0.001   # 0.1%
+        high: 0.40   # 40%
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Check form load speed, tracking on thank-you pages, and bot filtering."
+version: "1.0.0"

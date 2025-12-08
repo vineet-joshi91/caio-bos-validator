@@ -1,0 +1,16 @@
+id: COO-R-015
+title: Process Compliance Score
+severity: warn
+bucket: quality_sla
+description: Process audits or compliance scores should average ≥80%.
+evidence:
+  requires_intents: ["compliance_score_like","period_like"]
+  checks:
+    - type: value_bounds
+      column: "compliance_score_like"
+      low: 0.8
+      high: 1.0
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Review process audit trails and update SOPs for low-performing areas."
+version: "1.0.0"

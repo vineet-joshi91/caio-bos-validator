@@ -1,0 +1,14 @@
+id: CHRO-R-017
+title: Mandatory Policy Presence
+severity: warn
+bucket: policy_compliance
+description: Ensure core HR policies exist (PoSH, Leave, Data Privacy, Code of Conduct).
+evidence:
+  requires_intents: ["policy_doc_like"]
+  checks:
+    - type: policy_presence
+      docs_required: ["posh","leave","data_privacy","code_of_conduct"]
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Upload latest signed/approved versions; map custom titles to required categories."
+version: "1.0.0"

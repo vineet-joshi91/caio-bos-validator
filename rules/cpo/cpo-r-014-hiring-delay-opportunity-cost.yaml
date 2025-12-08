@@ -1,0 +1,36 @@
+id: CPO-R-014
+title: Hiring Delay Opportunity Cost
+severity: warn
+bucket: strategic_hiring_value
+description: Quantifies the revenue or productivity lost due to delays in closing open positions, helping business owners link hiring velocity with financial impact.
+evidence:
+  requires_intents: ["requisition_date_like","join_date_like","total_revenue_like","headcount_total_like","expected_output_per_employee_like","period_like"]
+  checks:
+    # 1. Compute daily business output per employee (proxy for contribution)
+    - type: derived_metric
+      name: "daily_output_per_employee"
+      expression: "(total_revenue_like / max(headcount_total_like,1e-9)) / 30"
+      group_by: "period_like"
+
+    # 2. Calculate hiring delay in days
+    - type: derived_metric
+      name: "hiring_delay_days"
+      expression: "DATEDIFF(join_date_like, requisition_date_like)"
+      group_by: "period_like"
+
+    # 3. Compute opportunity cost = delay × daily output
+    - type: derived_metric
+      name: "hiring_delay_cost"
+      expression: "daily_output_per_employee * hiring_delay_days"
+
+    # 4. Compare to candidate’s expected monthly output
+    - type: ratio_bounds_intents
+      numerator: "hiring_delay_cost"
+      denominator: "expected_output_per_employee_like"
+      low: 0.0
+      high: 1.0
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If opportunity cost exceeds monthly expected output, accelerate interview approvals and offer rollouts to reduce idle-value loss."
+version: "1.0.0"

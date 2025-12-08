@@ -1,0 +1,11 @@
+id: CROSS-R-113
+title: Headcount vs Payroll vs Revenue
+severity: warn
+bucket: efficiency
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(chro.headcount_total,1) > 0) & (pct_change(cfo.payroll_cost,1) > 0) -> (pct_change(cfo.booked_revenue,1) >= 0)"
+      require_ratio_pass_pct: 0.65
+fix_tip: "Ensure new hires add revenue or cost savings, not pure overhead."

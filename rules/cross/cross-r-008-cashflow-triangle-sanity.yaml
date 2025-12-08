@@ -1,0 +1,13 @@
+id: CROSS-R-108
+title: Cashflow Triangle Sanity (Op+Inv+Fin ≈ Net Change)
+severity: block
+bucket: reconciliation
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      mode: "numeric<=threshold"
+      expr: "abs((cfo.operating_cashflow + cfo.investing_cashflow + cfo.financing_cashflow) - cfo.net_change_in_cash) / (abs(cfo.net_change_in_cash) + 1e-9)"
+      threshold: 0.05
+      require_ratio_pass_pct: 0.85
+fix_tip: "Fix cashflow mapping; verify sign conventions and period alignment."

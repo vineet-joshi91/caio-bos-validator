@@ -1,0 +1,18 @@
+id: CMO-R-013
+title: Diminishing Returns (Saturation) Detector
+severity: warn
+bucket: economics_efficiency
+description: Rising spend with worsening CPL/CAC across ≥3 of 4 periods suggests saturation.
+evidence:
+  requires_intents: ["spend_like","cpl_like","cac_like","period_like"]
+  checks:
+    - type: conditional_trend_flag_intents
+      left:  { column: "spend_like", condition: "increasing_3_of_4" }
+      right: { column: "cpl_like",   condition: "increasing_3_of_4" }
+    - type: conditional_trend_flag_intents
+      left:  { column: "spend_like", condition: "increasing_3_of_4" }
+      right: { column: "cac_like",   condition: "increasing_3_of_4" }
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Shift budget to higher-quality audiences/creatives; test new channels."
+version: "1.0.0"

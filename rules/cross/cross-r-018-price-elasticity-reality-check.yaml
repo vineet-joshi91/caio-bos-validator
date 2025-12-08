@@ -1,0 +1,11 @@
+id: CROSS-R-118
+title: Price Elasticity Reality Check
+severity: warn
+bucket: pricing
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(cfo.avg_selling_price,1) < 0) -> (pct_change(coo.orders_completed,1) > 0)"
+      require_ratio_pass_pct: 0.6
+fix_tip: "If price cuts don’t lift orders, the demand issue isn’t price—it’s product or distribution."

@@ -1,0 +1,14 @@
+id: CPO-R-010
+title: Candidate Seniority vs Org Level Sanity
+severity: warn
+bucket: talent_fit_alignment
+description: Candidate seniority inferred from experience should align with offered job level (±1 band tolerance).
+evidence:
+  requires_intents: ["years_experience_like","job_level_like"]
+  checks:
+    - type: band_alignment_check
+      experience: "years_experience_like"
+      band: "job_level_like"
+      tolerance_bands: 1
+fix_tip: "Avoid over-qualification or under-leveling; adjust title or expectations."
+version: "1.0.0"

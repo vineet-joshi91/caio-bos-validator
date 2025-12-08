@@ -1,0 +1,11 @@
+id: CROSS-R-116
+title: Pipeline Consistency (Lead→SQL→Order)
+severity: warn
+bucket: funnel
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(cmo.qualified_leads,1) >= 0) & (pct_change(cmo.sql_count,1) >= 0) -> (pct_change(coo.orders_received,1) >= 0)"
+      require_ratio_pass_pct: 0.65
+fix_tip: "If SQLs rise but orders stall, fix pricing or proposal closure."

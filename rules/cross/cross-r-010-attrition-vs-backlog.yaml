@@ -1,0 +1,11 @@
+id: CROSS-R-110
+title: Attrition Driving Backlog
+severity: warn
+bucket: capacity
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(chro.attrition_rate,1) > 0) & (pct_change(coo.backlog_volume,1) > 0)"
+      require_ratio_pass_pct: 0.6
+fix_tip: "Strengthen retention in bottleneck teams; cross-train critical roles."

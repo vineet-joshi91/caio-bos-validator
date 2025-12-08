@@ -1,0 +1,16 @@
+id: CMO-R-008
+title: CPL Consistency
+severity: warn
+bucket: economics_efficiency
+description: CPL should equal spend divided by leads within 5% tolerance.
+evidence:
+  requires_intents: ["spend_like","leads_like","cpl_like","period_like"]
+  checks:
+    - type: equation_intents_tolerance
+      expression: "cpl_like = spend_like / max(leads_like,1e-9)"
+      group_by: "period_like"
+      tolerance_abs: 0.05
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Unify lead definitions across platforms; exclude duplicate or test leads."
+version: "1.0.0"

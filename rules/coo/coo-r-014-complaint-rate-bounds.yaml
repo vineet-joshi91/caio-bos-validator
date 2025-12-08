@@ -1,0 +1,18 @@
+id: COO-R-014
+title: Complaint Rate Bounds
+severity: warn
+bucket: quality_sla
+description: Customer complaint rate should stay within 0–5% of delivered units.
+evidence:
+  requires_intents: ["complaints_like","deliveries_total_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "complaints_like"
+      denominator: "deliveries_total_like"
+      low: 0.0
+      high: 0.05
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If complaint rate increases, correlate with defect or delivery delay data."
+version: "1.0.0"

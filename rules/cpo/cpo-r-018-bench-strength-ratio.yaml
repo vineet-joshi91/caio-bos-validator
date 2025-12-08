@@ -1,0 +1,15 @@
+id: CPO-R-018
+title: Bench Strength Ratio
+severity: warn
+bucket: strategic_retention
+description: Ready internal talent pool should cover at least 10% of active headcount.
+evidence:
+  requires_intents: ["bench_strength_like","headcount_total_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "bench_strength_like"
+      denominator: "headcount_total_like"
+      low: 0.1
+      high: 1.0
+fix_tip: "Increase cross-training and upskilling programs for internal readiness."
+version: "1.0.0"

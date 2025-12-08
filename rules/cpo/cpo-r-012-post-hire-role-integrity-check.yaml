@@ -1,0 +1,14 @@
+id: CPO-R-012
+title: Post-Hire Role Integration Check
+severity: warn
+bucket: talent_fit_alignment
+description: New hires should have assigned reporting lines, cost centers, and onboarding tasks completed within 30 days.
+evidence:
+  requires_intents: ["new_hires_like","reporting_manager_assigned_like","onboarding_tasks_complete_like"]
+  checks:
+    - type: onboarding_completion_rate
+      numerator: "onboarding_tasks_complete_like"
+      denominator: "new_hires_like"
+      min_rate: 0.9
+fix_tip: "Ensure onboarding checklist integration via HRIS; assign managers before Day 1."
+version: "1.0.0"

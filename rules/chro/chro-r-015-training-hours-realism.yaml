@@ -1,0 +1,18 @@
+id: CHRO-R-015
+title: Training Hours Realism
+severity: warn
+bucket: engagement_enablement
+description: Average training hours per employee per year should be between 5 and 100.
+evidence:
+  requires_intents: ["training_hours_like","headcount_total_like","period_like"]
+  checks:
+    - type: training_hours_bounds
+      training_hours: "training_hours_like"
+      headcount: "headcount_total_like"
+      period: "period_like"
+      low: 5
+      high: 100
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Confirm LMS exports and mandatory compliance modules; annotate certification pushes."
+version: "1.0.0"

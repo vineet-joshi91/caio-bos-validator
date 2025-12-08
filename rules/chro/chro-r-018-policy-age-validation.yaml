@@ -1,0 +1,14 @@
+id: CHRO-R-018
+title: Policy Age Validation
+severity: warn
+bucket: policy_compliance
+description: No mandatory policy should be older than 365 days at time of analysis.
+evidence:
+  requires_intents: ["policy_doc_like"]
+  checks:
+    - type: policy_age_max_days
+      max_days: 365
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Schedule annual review & sign-off; record last-modified metadata."
+version: "1.0.0"

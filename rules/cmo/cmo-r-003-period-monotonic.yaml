@@ -1,0 +1,12 @@
+id: CMO-R-003
+title: Period Monotonic Sequence (Marketing)
+severity: warn
+bucket: period_cohesion
+description: Reporting periods across marketing datasets should progress forward with no gaps or reversals.
+evidence:
+  requires_intents: ["period_like"]
+  checks:
+    - type: monotonic_time_intents
+      column: "period_like"
+fix_tip: "Align export frequencies (daily/weekly/monthly) across platforms before upload."
+version: "1.0.0"

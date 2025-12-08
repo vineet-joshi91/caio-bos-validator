@@ -1,0 +1,18 @@
+id: COO-R-019
+title: Maintenance Cost Ratio
+severity: warn
+bucket: resource_utilization
+description: Maintenance cost should remain below 10% of operating cost.
+evidence:
+  requires_intents: ["maintenance_cost_like","operating_cost_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "maintenance_cost_like"
+      denominator: "operating_cost_like"
+      low: 0.0
+      high: 0.10
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Rising maintenance costs indicate asset aging or poor preventive schedules."
+version: "1.0.0"

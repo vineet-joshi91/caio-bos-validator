@@ -1,0 +1,13 @@
+id: CPO-R-011
+title: Duplicate Role Overlap Detection
+severity: warn
+bucket: talent_fit_alignment
+description: Detect overlap between newly created roles and existing positions based on similar titles & functions.
+evidence:
+  requires_intents: ["job_title_like","function_like","department_like"]
+  checks:
+    - type: semantic_similarity_overlap
+      columns: ["job_title_like","function_like"]
+      threshold: 0.85
+fix_tip: "Merge overlapping roles or redefine responsibilities to avoid redundancy."
+version: "1.0.0"

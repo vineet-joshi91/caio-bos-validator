@@ -1,0 +1,11 @@
+id: CROSS-R-123
+title: Spend vs Lead Quality
+severity: warn
+bucket: funnel_quality
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(cmo.total_spend,1) > 0) -> (pct_change(cmo.qualified_leads,1) > 0)"
+      require_ratio_pass_pct: 0.6
+fix_tip: "If spend rises but lead quality doesn’t, review targeting & creative relevance."

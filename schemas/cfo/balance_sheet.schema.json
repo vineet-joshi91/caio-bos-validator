@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BalanceSheet",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "period": {
+        "type": "string"
+      },
+      "assets": {
+        "type": "number"
+      },
+      "liabilities": {
+        "type": "number"
+      },
+      "equity": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "period",
+      "assets",
+      "liabilities",
+      "equity"
+    ]
+  }
+}

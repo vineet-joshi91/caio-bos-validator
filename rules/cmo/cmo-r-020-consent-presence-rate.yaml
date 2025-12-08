@@ -1,0 +1,16 @@
+id: CMO-R-020
+title: Consent/Opt-in Presence Rate
+severity: warn
+bucket: compliance_privacy
+description: A high proportion of captured leads should include a consent/opt-in flag (≥90%).
+evidence:
+  requires_intents: ["consent_flag_like","leads_like","period_like"]
+  checks:
+    - type: presence_rate
+      flag: "consent_flag_like"
+      weight: "leads_like"
+      min_rate: 0.90
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Add explicit consent fields to forms; sync consent states to CRM and email tools."
+version: "1.0.0"

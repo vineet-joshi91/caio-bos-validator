@@ -1,0 +1,16 @@
+id: CFO-R-019
+title: Statistical Outlier Detection
+severity: warn
+bucket: anomaly_detection
+description: Detects >3σ outliers in revenue or OPEX values.
+evidence:
+  requires_intents: ["revenue_like","opex_like","period_like"]
+  checks:
+    - type: outlier_sigma_intents
+      column: "revenue_like"
+      sigma: 3.0
+    - type: outlier_sigma_intents
+      column: "opex_like"
+      sigma: 3.0
+fix_tip: "Validate extraordinary gains/losses; explain outliers in notes."
+version: "1.0.0"

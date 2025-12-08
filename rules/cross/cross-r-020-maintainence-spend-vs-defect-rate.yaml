@@ -1,0 +1,12 @@
+id: CROSS-R-120
+title: Maintenance Spend vs Defect Rate
+severity: warn
+bucket: quality
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_trend
+      a: "coo.maintenance_spend"
+      b: "coo.defect_rate"
+      min_corr: -0.2
+fix_tip: "If more maintenance doesn’t lower defects, reallocate to root causes."

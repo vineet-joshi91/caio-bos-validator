@@ -1,0 +1,16 @@
+id: CHRO-R-007
+title: Hiring–Attrition Activity Correlation
+severity: warn
+bucket: movement_cohesion
+description: Hiring and attrition activity should show positive correlation over time (min 0.2).
+evidence:
+  requires_intents: ["hires_like","exits_like","period_like"]
+  checks:
+    - type: trend_correlation_intents
+      left: { column: "hires_like" }
+      right: { column: "exits_like" }
+      min_corr: 0.2
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Large divergence may indicate hiring freeze or delayed offboarding—annotate context."
+version: "1.0.0"

@@ -1,0 +1,23 @@
+id: CMO-R-002
+title: ROAS Properness (Context-Aware)
+severity: warn
+bucket: economics_efficiency
+description: ROAS should be stable vs its own rolling pattern; flag spikes/collapses or persistent decline.
+evidence:
+  requires_intents: ["attributed_revenue_like","spend_like","period_like","channel_like"]
+  checks:
+    - type: derived_metric
+      name: "roas"
+      expression: "attributed_revenue_like / max(spend_like,1e-9)"
+      group_by: ["channel_like","period_like"]
+    - type: deviation_from_rolling_mean
+      column: "roas"
+      window: 3
+      max_dev_pct: 0.25
+    - type: trend_guard
+      column: "roas"
+      condition: "decreasing_3_of_4"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Investigate tracking changes, discounting, or audience fatigue when ROAS deviates sharply."
+version: "1.0.0"

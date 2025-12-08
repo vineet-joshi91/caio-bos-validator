@@ -1,0 +1,19 @@
+id: CMO-R-018
+title: Bot/Invalid Traffic Heuristics
+severity: warn
+bucket: data_quality
+description: Flag abnormally high CTR with extreme bounce or ultra-short session duration.
+evidence:
+  requires_intents: ["impressions_like","clicks_like","bounce_rate_like","session_duration_sec_like","channel_like","period_like"]
+  checks:
+    - type: heuristic_flag
+      conditions:
+        - name: "ctr_extreme_and_bouncy"
+          exprs:
+            - "(clicks_like / max(impressions_like,1e-9)) > 0.20"
+            - "bounce_rate_like > 0.90"
+            - "session_duration_sec_like < 10"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Tighten geo/device filters, exclude data centers, enable reCAPTCHA, and refine placements."
+version: "1.0.0"

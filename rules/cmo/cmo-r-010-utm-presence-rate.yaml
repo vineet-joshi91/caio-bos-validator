@@ -1,0 +1,16 @@
+id: CMO-R-010
+title: UTM Presence Rate
+severity: warn
+bucket: channel_integrity
+description: Majority of sessions/leads should carry valid UTMs (target ≥80%).
+evidence:
+  requires_intents: ["utm_present_flag_like","sessions_like","period_like"]
+  checks:
+    - type: presence_rate
+      flag: "utm_present_flag_like"
+      weight: "sessions_like"
+      min_rate: 0.80
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Mandate UTM templates; enforce auto-tagging in ad platforms."
+version: "1.0.0"

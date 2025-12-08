@@ -1,0 +1,13 @@
+id: CFO-R-015
+title: Flatline or Low-Variance Detection
+severity: warn
+bucket: anomaly_detection
+description: Detects near-zero variance in key metrics across periods.
+evidence:
+  requires_intents: ["revenue_like","cogs_like","net_income_like","period_like"]
+  checks:
+    - type: variance_threshold
+      columns: ["revenue_like","cogs_like","net_income_like"]
+      min_variance: 1e-6
+fix_tip: "Update with live accounting data; static numbers suggest fabrication."
+version: "1.0.0"

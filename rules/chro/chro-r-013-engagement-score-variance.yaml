@@ -1,0 +1,15 @@
+id: CHRO-R-013
+title: Engagement Score Variance
+severity: warn
+bucket: engagement_enablement
+description: Engagement scores should show non-zero variance; identical values imply fabrication or stale data.
+evidence:
+  requires_intents: ["engagement_score_like","period_like"]
+  checks:
+    - type: variance_threshold
+      columns: ["engagement_score_like"]
+      min_variance: 1e-6
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Verify survey collection and aggregation; ensure team-level granularity exists."
+version: "1.0.0"

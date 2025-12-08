@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ChannelReport",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "period": {
+        "type": "string"
+      },
+      "channel": {
+        "type": "string"
+      },
+      "spend": {
+        "type": "number"
+      },
+      "revenue": {
+        "type": "number"
+      },
+      "clicks": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "period",
+      "channel",
+      "spend",
+      "revenue"
+    ]
+  }
+}

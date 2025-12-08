@@ -1,0 +1,17 @@
+id: CHRO-R-014
+title: Engagement–Attrition Correlation
+severity: warn
+bucket: engagement_enablement
+description: Engagement should inversely correlate with attrition (corr ≤ -0.3 expected).
+evidence:
+  requires_intents: ["engagement_score_like","exits_like","period_like"]
+  checks:
+    - type: trend_correlation_intents
+      left:  { column: "engagement_score_like" }
+      right: { column: "exits_like" }
+      max_corr: -0.3
+      mode: "expect_negative"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If no relationship appears, check timing (lag) or survey reach."
+version: "1.0.0"

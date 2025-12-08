@@ -1,0 +1,18 @@
+id: COO-R-011
+title: Defect Rate Bounds
+severity: warn
+bucket: quality_sla
+description: Product defect rate should stay between 0% and 10%.
+evidence:
+  requires_intents: ["defects_like","output_units_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "defects_like"
+      denominator: "output_units_like"
+      low: 0.0
+      high: 0.10
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If defect rates rise, inspect training logs, raw materials, or QC equipment."
+version: "1.0.0"

@@ -1,0 +1,18 @@
+id: CFO-R-018
+title: Current vs Non-current Mapping
+severity: warn
+bucket: schema_validity
+description: Current + Non-current assets and liabilities should approximate totals within 2 %.
+evidence:
+  requires_intents: ["current_assets_like","noncurrent_assets_like","assets_like","current_liabilities_like","noncurrent_liabilities_like","liabilities_like","period_like"]
+  checks:
+    - type: equation_tolerance_optional
+      expression: "assets_like = current_assets_like + noncurrent_assets_like"
+      tolerance_abs: 0.02
+      group_by: "period_like"
+    - type: equation_tolerance_optional
+      expression: "liabilities_like = current_liabilities_like + noncurrent_liabilities_like"
+      tolerance_abs: 0.02
+      group_by: "period_like"
+fix_tip: "Confirm subtotal roll-ups; mis-mapped accounts distort ratios."
+version: "1.0.0"

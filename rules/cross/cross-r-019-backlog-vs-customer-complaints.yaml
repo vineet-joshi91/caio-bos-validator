@@ -1,0 +1,12 @@
+id: CROSS-R-119
+title: Backlog vs Customer Complaints
+severity: warn
+bucket: service
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_trend
+      a: "coo.backlog_volume"
+      b: "coo.complaint_rate"
+      min_corr: 0.2
+fix_tip: "High backlog correlating with complaints—add surge capacity."

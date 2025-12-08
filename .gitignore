@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+
+# Local venv
+.venv/
+env/
+venv/
+.env
+
+# Not needed in this backend-only repo
+frontend/
+docs/
+fixtures/
+out.json
+bos_report.json
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

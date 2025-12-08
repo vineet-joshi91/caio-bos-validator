@@ -1,0 +1,11 @@
+id: CROSS-R-101
+title: Funnel Continuity (Spend→Orders→Revenue)
+severity: warn
+bucket: causality
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(cmo.total_spend,1) >= 0) & (pct_change(coo.orders_completed,1) >= 0) & (pct_change(cfo.booked_revenue,1) >= 0)"
+      require_ratio_pass_pct: 0.7
+fix_tip: "If spend rises without orders/revenue, recheck channel mix, attribution windows, and order-to-cash timing."

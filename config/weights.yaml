@@ -1,0 +1,23 @@
+# Global penalties used to derive indices from rule failures
+penalties:
+  penalty_block: 10
+  penalty_warn: 5
+
+# When a COMMON rule fails, apply a softer penalty to each brain
+common_penalty_factor: 0.5
+
+# Each bucket failure reduces bucket score by this amount
+bucket_penalty: 3.0
+
+# Optional per-brain bucket weights (not used in v1 label, but future-ready)
+bucket_weights:
+  CFO:
+    integrity_consistency: 0.35
+    schema_presence: 0.25
+    period_alignment: 0.20
+    value_sanity: 0.20
+  CMO:
+    schema_presence: 0.25
+    value_sanity: 0.35
+    period_alignment: 0.20
+    integrity_consistency: 0.20

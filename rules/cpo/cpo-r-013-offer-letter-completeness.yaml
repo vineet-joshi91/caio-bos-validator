@@ -1,0 +1,12 @@
+id: CPO-R-013
+title: Offer Letter Completeness
+severity: block
+bucket: process_compliance
+description: All issued offers must contain salary, grade, start date, and signature metadata.
+evidence:
+  requires_intents: ["offer_letters_like"]
+  checks:
+    - type: document_metadata_check
+      required_fields: ["salary","grade","start_date","signature"]
+fix_tip: "Re-upload incomplete documents or regenerate via HRIS."
+version: "1.0.0"

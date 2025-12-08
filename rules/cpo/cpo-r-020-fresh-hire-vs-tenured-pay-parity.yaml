@@ -1,0 +1,26 @@
+id: CPO-R-020
+title: Fresh Hire vs Tenured Pay Parity
+severity: warn
+bucket: compensation_fairness
+description: Compare compensation levels of new hires vs existing employees in the same band to ensure parity and retention fairness.
+evidence:
+  requires_intents: ["salary_like","hire_type_like","tenure_like","grade_like","period_like"]
+  checks:
+    # 1. Median salary gap between new hires and tenured employees within same grade
+    - type: median_gap_bound_grouped
+      value: "salary_like"
+      group: "grade_like"
+      condition_groups:
+        fresh_hires: { filter: "hire_type_like == 'new'" }
+        tenured: { filter: "tenure_like > 12" }   # months
+      max_gap_pct: 0.20
+
+    # 2. Correlation sanity check: tenure should generally correlate positively with pay
+    - type: correlation_threshold
+      x: "tenure_like"
+      y: "salary_like"
+      min_corr: 0.1
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If new hire packages exceed experienced employee pay by >20%, initiate salary review or define acceleration criteria for tenured staff."
+version: "1.0.0"

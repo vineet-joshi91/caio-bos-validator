@@ -1,0 +1,19 @@
+id: CMO-R-005
+title: CTR Bounds by Channel
+severity: warn
+bucket: funnel_cohesion
+description: Click-through rate should be within realistic bounds per channel.
+evidence:
+  requires_intents: ["impressions_like","clicks_like","channel_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents_grouped
+      numerator: "clicks_like"
+      denominator: "impressions_like"
+      group_by: "channel_like"
+      defaults:
+        low: 0.0005   # 0.05%
+        high: 0.25    # 25%
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Out-of-range CTR can indicate bot traffic, miscounted impressions, or tracking glitches."
+version: "1.0.0"

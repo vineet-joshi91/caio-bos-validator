@@ -1,0 +1,20 @@
+id: COO-R-017
+title: Cost per Unit Stability
+severity: warn
+bucket: resource_utilization
+description: Cost per unit produced should not deviate >20% from rolling mean.
+evidence:
+  requires_intents: ["operating_cost_like","output_units_like","period_like"]
+  checks:
+    - type: derived_metric
+      name: "cost_per_unit"
+      expression: "operating_cost_like / max(output_units_like,1e-9)"
+      group_by: "period_like"
+    - type: deviation_from_rolling_mean
+      column: "cost_per_unit"
+      window: 3
+      max_dev_pct: 0.20
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Investigate variable cost changes or inefficiencies in resource usage."
+version: "1.0.0"

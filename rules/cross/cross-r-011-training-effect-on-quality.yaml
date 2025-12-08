@@ -1,0 +1,11 @@
+id: CROSS-R-111
+title: Training Effect on Defects
+severity: warn
+bucket: quality
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(chro.training_hours,1) > 0) -> (pct_change(coo.defect_rate,1) <= 0)"
+      require_ratio_pass_pct: 0.6
+fix_tip: "If defects don’t improve post-training, recalibrate L&D content and on-the-job reinforcement."

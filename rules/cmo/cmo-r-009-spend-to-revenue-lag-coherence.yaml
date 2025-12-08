@@ -1,0 +1,17 @@
+id: CMO-R-009
+title: Spend→Revenue Lag Coherence
+severity: warn
+bucket: funnel_cohesion
+description: Revenue should lag spend within a reasonable window (e.g., ≤2 periods) unless PLG/brand-heavy.
+evidence:
+  requires_intents: ["spend_like","attributed_revenue_like","period_like"]
+  checks:
+    - type: lead_lag_correlation
+      left:  { column: "spend_like" }
+      right: { column: "attributed_revenue_like" }
+      max_lag_periods: 2
+      min_corr: 0.2
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "If lag exceeds 2 periods, annotate long sales cycles or high-consideration funnel."
+version: "1.0.0"

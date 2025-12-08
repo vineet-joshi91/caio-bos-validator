@@ -1,0 +1,12 @@
+id: CPO-R-004
+title: Duplicate Job Requisitions
+severity: warn
+bucket: hiring_integrity
+description: Detect duplicate job IDs or identical titles open across departments.
+evidence:
+  requires_intents: ["job_id_like","job_title_like","department_like"]
+  checks:
+    - type: duplicate_values_multi
+      columns: ["job_id_like","job_title_like","department_like"]
+fix_tip: "Merge or close redundant requisitions; ensure central posting governance."
+version: "1.0.0"

@@ -1,0 +1,14 @@
+id: CMO-R-019
+title: Cross-Platform Period Alignment (Ads vs Analytics vs CRM)
+severity: warn
+bucket: attribution_quality
+description: Period sets should align across Ads, Analytics, and CRM datasets.
+evidence:
+  requires_intents: ["period_ads_like","period_analytics_like","period_crm_like"]
+  checks:
+    - type: period_alignment_multi
+      columns: ["period_ads_like","period_analytics_like","period_crm_like"]
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Export the same date ranges and granularities from all systems."
+version: "1.0.0"

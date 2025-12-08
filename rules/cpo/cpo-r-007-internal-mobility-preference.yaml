@@ -1,0 +1,15 @@
+id: CPO-R-007
+title: Internal Mobility Preference
+severity: warn
+bucket: budget_band_coherence
+description: At least 60% of filled roles should be sourced from internal candidates.
+evidence:
+  requires_intents: ["internal_hires_like","total_hires_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "internal_hires_like"
+      denominator: "total_hires_like"
+      low: 0.6
+      high: 1.0
+fix_tip: "Promote internal career paths; reduce external dependency for mid-level positions."
+version: "1.0.0"

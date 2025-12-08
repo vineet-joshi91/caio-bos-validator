@@ -1,0 +1,18 @@
+id: COO-R-004
+title: Downtime Accounting
+severity: warn
+bucket: operational_integrity
+description: Logged downtime should not exceed 20% of available hours per period.
+evidence:
+  requires_intents: ["downtime_hours_like","available_hours_like","period_like"]
+  checks:
+    - type: ratio_bounds_intents
+      numerator: "downtime_hours_like"
+      denominator: "available_hours_like"
+      low: 0.0
+      high: 0.20
+      group_by: "period_like"
+fallbacks:
+  on_missing_intents: "warn_low_confidence"
+fix_tip: "Validate maintenance logs; identify chronic machine or system failures."
+version: "1.0.0"

@@ -1,0 +1,13 @@
+id: CROSS-R-122
+title: LTV:CAC Reality Check
+severity: warn
+bucket: unit_economics
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      mode: "numeric<=threshold"
+      expr: "(1.0 / (cmo.ltv_to_cac + 1e-9))"
+      threshold: 0.5
+      require_ratio_pass_pct: 0.8
+fix_tip: "Lift retention or cut CAC to restore sustainable payback."

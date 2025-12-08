@@ -1,0 +1,11 @@
+id: CROSS-R-124
+title: Overtime vs SLA Improvement
+severity: warn
+bucket: operations
+version: "1.0.0"
+evidence:
+  checks:
+    - type: cross_expr
+      expr: "(pct_change(coo.overtime_hours,1) > 0) -> (pct_change(coo.sla_breaches,1) <= 0)"
+      require_ratio_pass_pct: 0.6
+fix_tip: "If SLA breaches persist despite overtime, focus on process redesign."
