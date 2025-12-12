@@ -59,6 +59,11 @@ class TransactionOut(BaseModel):
 
     @classmethod
     def from_orm_tx(cls, tx: CreditTransaction) -> "TransactionOut":
+        # Support either extra_metadata (new) or metadata (old), just in case
+        meta = getattr(tx, "extra_metadata", None)
+        if meta is None:
+            meta = getattr(tx, "metadata", None)
+
         return cls(
             id=tx.id,
             user_id=tx.user_id,
@@ -67,7 +72,7 @@ class TransactionOut(BaseModel):
             gateway=getattr(tx, "gateway", None),
             gateway_payment_id=getattr(tx, "gateway_payment_id", None),
             created_at=tx.created_at.isoformat() if tx.created_at else "",
-            metadata=getattr(tx, "metadata", None),
+            metadata=meta,
         )
 
 
@@ -195,7 +200,7 @@ def create_credit_order(
         amount_minor_units=amount,
         type="credit_topup",
         status="initiated",
-        metadata={"receipt": receipt},
+        extra_metadata={"receipt": receipt},
     )
     db.add(record)
     db.commit()
