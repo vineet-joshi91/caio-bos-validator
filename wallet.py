@@ -350,20 +350,17 @@ def list_transactions(
     offset: int = 0,
 ) -> List[CreditTransaction]:
     """
-    Fetch recent credit_transactions for a user.
-
-    NOTE:
-    - This will include older non-credit entries too.
-    - Frontend can filter by reason/gateway if needed.
+    Return a page of transactions for a user, newest first.
+    This must match how wallet_api.py calls it.
     """
-    stmt = (
-        select(CreditTransaction)
-        .where(CreditTransaction.user_id == user_id)
+    return (
+        db.query(CreditTransaction)
+        .filter(CreditTransaction.user_id == user_id)
         .order_by(CreditTransaction.created_at.desc())
-        .limit(limit)
         .offset(offset)
+        .limit(limit)
+        .all()
     )
-    return list(db.execute(stmt).scalars().all())
 
 def get_wallet(db: Session, user_id: int) -> CreditWallet:
     """Alias for get_or_create_wallet, matching earlier design."""
