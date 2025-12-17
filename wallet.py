@@ -116,7 +116,7 @@ class CreditTransaction(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     gateway = Column(Text, nullable=True, server_default="system")
     gateway_payment_id = Column(Text, nullable=True)
-    metadata = Column(JSONB, nullable=True)
+    extra_metadata = Column("metadata", JSONB, nullable=True, default=dict)
 
 
 class UsageDaily(Base):
@@ -272,7 +272,7 @@ def apply_credit_topup(
         reason=reason,
         gateway=gateway,
         gateway_payment_id=payment_id,
-        metadata=metadata or {},
+        extra_metadata=metadata or {},
     )
     db.add(tx)
 
@@ -336,7 +336,7 @@ def consume_credits_and_record_usage(
         reason=reason,
         gateway=gateway,
         gateway_payment_id=None,
-        metadata=metadata or {},
+        extra_metadata=metadata or {},
     )
     db.add(tx)
 
@@ -404,6 +404,6 @@ class PaymentRecord(Base):
     amount_minor_units = Column(Integer, nullable=False)
     type = Column(Text, nullable=False, default="credit_topup")
     status = Column(Text, nullable=False)  # 'initiated','processing','completed','failed','cancelled'
-    metadata = Column(JSONB, nullable=True)
+    tx_metadata = Column("metadata", JSONB, nullable=True, default=dict)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
