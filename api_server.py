@@ -11,15 +11,19 @@ from typing import Any, Dict, Optional
 from sqlalchemy.orm import Session
 from wallet_api import router as wallet_router
 from webhooks_razorpay import router as razorpay_webhook_router
-
+from routes_bos_auth import router as bos_auth_router
 
 from wallet import (
+    get_balance,
+    list_transactions,
+    apply_credit_topup,
     consume_credits_and_record_usage,
     InsufficientCreditsError,
     DailyLimitReachedError,
 )
-from .db import get_db
-from .db import SessionLocal
+
+from db import get_db
+from db import SessionLocal
 from tier_config import TIER_CONFIG
 from bos_credits import charge_bos_run
 
@@ -28,6 +32,7 @@ app = FastAPI(title="CAIO BOS – EA API")
 # Wallet + Payments routers MUST be included first
 app.include_router(wallet_router)
 app.include_router(razorpay_webhook_router)
+app.include_router(bos_auth_router, prefix="", tags=["bos-auth"])
 
 # -------------------- Models --------------------
 class EARequest(BaseModel):
