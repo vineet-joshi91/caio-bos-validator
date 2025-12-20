@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
@@ -34,7 +34,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # We mount under /bos (matches your nginx prefix)
 router = APIRouter(prefix="/bos", tags=["bos-auth"])
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/bos/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/bos/token")
 
 
 # ---------------------------------------------------------------------
@@ -158,3 +158,20 @@ def bos_me(user: User = Depends(get_current_user)):
         is_paid=bool(user.is_paid),
         tier=user.tier or "demo",
     )
+
+@router.post("/token")
+def bos_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Swagger sends username/password in form fields
+    email = (form_data.username or "").strip()
+
+    user = _get_user_by_email(db, email)
+    if not user or not user.hashed_password:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if not _verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token = _create_access_token(user.id)
+
+    # IMPORTANT: return the standard OAuth2 token shape
+    return {"access_token": token, "token_type": "bearer"}

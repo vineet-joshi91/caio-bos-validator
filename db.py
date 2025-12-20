@@ -1,30 +1,23 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Dec  1 17:57:41 2025
-
-@author: Vineet
-"""
-
 # db.py
-# -*- coding: utf-8 -*-
-"""
-Minimal SQLAlchemy setup for CAIO BOS credits/usage.
-
-This is intentionally small and self-contained so it doesn't disturb
-the rest of the validator/SLM engine.
-"""
+from __future__ import annotations
 
 import os
 from typing import Generator
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg2://postgres:postgres@localhost:5432/caio_bos",
-)
+# Load .env from the project root
+load_dotenv()
 
+# Use a single, explicit DATABASE_URL (Neon)
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set. Please configure it in your .env file.")
+
+# SQLAlchemy engine & session factory
 engine = create_engine(
     DATABASE_URL,
     future=True,
@@ -32,16 +25,19 @@ engine = create_engine(
 )
 
 SessionLocal = sessionmaker(
-    bind=engine,
-    autoflush=False,
     autocommit=False,
-    future=True,
+    autoflush=False,
+    bind=engine,
+    class_=Session,
 )
 
 Base = declarative_base()
 
 
 def get_db() -> Generator[Session, None, None]:
+    """
+    FastAPI dependency that yields a DB session and closes it after the request.
+    """
     db = SessionLocal()
     try:
         yield db
