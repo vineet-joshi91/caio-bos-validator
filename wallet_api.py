@@ -119,7 +119,11 @@ def wallet_transactions(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ) -> List[TransactionOut]:
+    if not getattr(current_user, "is_admin", False) and user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to view other users' transactions")
+
     txs = list_transactions(db, user_id=user_id, limit=limit, offset=offset)
     return [TransactionOut.from_orm_tx(tx) for tx in txs]
 
