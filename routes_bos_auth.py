@@ -32,9 +32,8 @@ JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MIN", "43200"))  # 30 days
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # We mount under /bos (matches your nginx prefix)
-router = APIRouter(prefix="/bos", tags=["bos-auth"])
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/bos/token")
+router = APIRouter(tags=["bos-auth"])
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
 # ---------------------------------------------------------------------
