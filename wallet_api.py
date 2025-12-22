@@ -21,6 +21,8 @@ from wallet import (
     PaymentRecord,
 )
 
+from routes_bos_auth import get_current_user, User as AuthUser
+
 router = APIRouter(prefix="/wallet", tags=["wallet"])
 
 # ---------------------------------------------------------------------------
@@ -102,7 +104,11 @@ class CreateOrderResponse(BaseModel):
 def wallet_balance(
     user_id: int = Query(..., description="User ID whose wallet to inspect"),
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ) -> WalletBalanceResponse:
+    if not getattr(current_user, "is_admin", False) and user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to view other users' wallet")
+
     balance = get_balance(db, user_id=user_id)
     return WalletBalanceResponse(user_id=user_id, balance_credits=balance)
 
