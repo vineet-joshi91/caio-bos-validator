@@ -98,32 +98,31 @@ class CreateOrderResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+from routes_bos_auth import get_current_user, User  # add this import near the top if you prefer
 
 
 @router.get("/balance", response_model=WalletBalanceResponse)
 def wallet_balance(
-    user_id: int = Query(..., description="User ID whose wallet to inspect"),
     db: Session = Depends(get_db),
-    current_user: AuthUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> WalletBalanceResponse:
-    if not getattr(current_user, "is_admin", False) and user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not allowed to view other users' wallet")
-
+    user_id = int(user.id)
     balance = get_balance(db, user_id=user_id)
     return WalletBalanceResponse(user_id=user_id, balance_credits=balance)
 
 
 @router.get("/transactions", response_model=List[TransactionOut])
 def wallet_transactions(
-    user_id: int = Query(..., description="User ID"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: AuthUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> List[TransactionOut]:
-    if not getattr(current_user, "is_admin", False) and user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not allowed to view other users' transactions")
-
+    user_id = int(user.id)
     txs = list_transactions(db, user_id=user_id, limit=limit, offset=offset)
     return [TransactionOut.from_orm_tx(tx) for tx in txs]
 
@@ -132,6 +131,7 @@ def wallet_transactions(
 def create_credit_order(
     payload: CreateOrderRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> CreateOrderResponse:
     """
     Start a credit-pack purchase flow.
@@ -141,6 +141,9 @@ def create_credit_order(
     - Insert a payment_records row with status='initiated'.
     - Return order details (order_id, amount, currency, pack info) to frontend.
     """
+    # Enforce: you can only buy credits for yourself (ignore payload.user_id)
+    payload_user_id = int(user.id)
+
     if payload.gateway.lower() != "razorpay":
         raise HTTPException(
             status_code=400,
@@ -172,16 +175,16 @@ def create_credit_order(
     currency = pack.currency.upper()
 
     # 2) Create Razorpay order
-    receipt = f"credits:{payload.user_id}:{payload.pack_id}:{int(time.time())}"
+    receipt = f"credits:{payload_user_id}:{payload.pack_id}:{int(time.time())}"
 
     try:
         order = razorpay_client.order.create(
             {
-                "amount": amount,  # in the smallest unit (paise)
+                "amount": amount,
                 "currency": currency,
                 "receipt": receipt,
                 "notes": {
-                    "user_id": str(payload.user_id),
+                    "user_id": str(payload_user_id),
                     "pack_id": payload.pack_id,
                     "type": "credit_topup",
                 },
@@ -201,7 +204,7 @@ def create_credit_order(
 
     # 3) Store payment_records row
     record = PaymentRecord(
-        user_id=payload.user_id,
+        user_id=payload_user_id,
         pack_id=payload.pack_id,
         gateway="razorpay",
         gateway_order_id=order_id,
