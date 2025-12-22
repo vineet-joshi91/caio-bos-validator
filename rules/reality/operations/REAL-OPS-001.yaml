@@ -1,0 +1,10 @@
+id: REAL-OPS-001
+domain: operations
+title: "Vendor concentration increases operational resilience risk"
+statement: >
+  Over-dependence on a single critical vendor increases resilience risk and reduces negotiating leverage.
+severity: high
+confidence: high
+horizon: 12_24_months
+valid_until: "2026-06-30"
+tags: [vendor_risk, resilience, dependency]

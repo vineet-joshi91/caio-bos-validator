@@ -1,0 +1,10 @@
+id: REAL-PEO-001
+domain: people
+title: "Skill half-life shrinking; hiring ≠ capability"
+statement: >
+  Skills obsolescence is accelerating; hiring alone doesn’t create capability without enablement.
+severity: medium
+confidence: medium
+horizon: 12_24_months
+valid_until: "2026-06-30"
+tags: [upskilling, capability, hiring]

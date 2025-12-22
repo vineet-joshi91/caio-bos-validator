@@ -1,0 +1,10 @@
+id: REAL-HR-001
+domain: hr
+title: "Low transparency decisions reduce trust and increase attrition risk"
+statement: >
+  Opaque people decisions and weak internal communication can erode trust and raise attrition risk.
+severity: medium
+confidence: medium
+horizon: 6_12_months
+valid_until: "2026-06-30"
+tags: [attrition, trust, communication]

@@ -1,0 +1,11 @@
+id: REAL-FIN-001
+domain: finance
+title: "AI workloads can drive non-linear cloud cost growth"
+statement: >
+  As AI workloads scale (esp. GPU inference/reasoning), cloud spend can grow non-linearly,
+  invalidating linear budget assumptions.
+severity: high
+confidence: medium
+horizon: 6_12_months
+valid_until: "2026-06-30"
+tags: [cloud, ai, gpu, cost_curve]

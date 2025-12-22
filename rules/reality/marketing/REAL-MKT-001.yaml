@@ -1,0 +1,10 @@
+id: REAL-MKT-001
+domain: marketing
+title: "Attribution reliability declines with multi-touch journeys"
+statement: >
+  Marketing attribution can overstate channel impact as journeys become multi-touch and tracking degrades.
+severity: medium
+confidence: medium
+horizon: 6_12_months
+valid_until: "2026-06-30"
+tags: [attribution, measurement, cac]
