@@ -72,7 +72,7 @@ from sqlalchemy import (
     and_,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, synonym
 
 from db import Base
 
@@ -405,5 +405,6 @@ class PaymentRecord(Base):
     type = Column(Text, nullable=False, default="credit_topup")
     status = Column(Text, nullable=False)  # 'initiated','processing','completed','failed','cancelled'
     tx_metadata = Column("metadata", JSONB, nullable=True, default=dict)
+    extra_metadata = synonym("tx_metadata")
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
