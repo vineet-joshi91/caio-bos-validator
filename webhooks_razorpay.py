@@ -13,7 +13,9 @@ from __future__ import annotations
 import json
 import os
 from typing import Any, Dict, Optional
-
+import hmac
+import hashlib
+    
 import razorpay
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -34,25 +36,18 @@ if not RAZORPAY_WEBHOOK_SECRET:
 def _verify_signature(body: bytes, signature: str) -> None:
     """
     Verify Razorpay webhook signature.
-    Raises HTTPException(400) if invalid or secret missing.
+
+    Razorpay sends: X-Razorpay-Signature = HMAC_SHA256(body, webhook_secret)
     """
-    if not RAZORPAY_WEBHOOK_SECRET:
-        raise HTTPException(
-            status_code=500,
-            detail="Razorpay webhook secret not configured on server.",
-        )
+    secret = os.getenv("RAZORPAY_WEBHOOK_SECRET") or os.getenv("RAZORPAY_WEBHOOK_SECRET_KEY")
+    if not secret:
+        raise ValueError("RAZORPAY_WEBHOOK_SECRET is not set")
 
-    if not signature:
-        raise HTTPException(status_code=400, detail="Missing signature header")
+    expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
-    try:
-        razorpay.Utility.verify_webhook_signature(
-            body.decode("utf-8"),
-            signature,
-            RAZORPAY_WEBHOOK_SECRET,
-        )
-    except razorpay.errors.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    # Constant-time compare
+    if not hmac.compare_digest(expected, signature):
+        raise ValueError("Invalid webhook signature")
 
 
 def _find_payment_record(
