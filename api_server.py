@@ -191,6 +191,8 @@ DEFAULT_ORIGINS = [
     "https://caioai.netlify.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:5500",
+    "http://127.0.0.1:5500",
 ]
 
 env_origins = os.getenv("CORS_ALLOW_ORIGINS")
