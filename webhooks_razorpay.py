@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-Razorpay webhooks handler for CAIO BOS credit packs.
+webhooks_razorpay.py
 
-Key design decisions:
-- NEVER use `record.metadata` (SQLAlchemy reserves `metadata` -> Base.metadata / MetaData object).
-- DB column is named "metadata" but mapped in model as `tx_metadata`.
-- Model also exposes `extra_metadata = synonym("tx_metadata")` for safe usage.
-- Idempotent: if already completed, do nothing.
-- Fail-safe: if signature missing/invalid, reject.
+Razorpay webhook handler for CAIO BOS credit top-ups.
+
+Critical rules:
+- DO NOT use model attribute name `metadata` anywhere (SQLAlchemy reserves it).
+- PaymentRecord stores JSON in DB column named "metadata" but mapped as `tx_metadata`
+  (and aliased as `extra_metadata` via synonym in your model).
+- Idempotent: do not credit twice for the same order.
+- Fail-safe: reject if signature missing/invalid.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
-import hmac
-import hashlib
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -27,95 +29,81 @@ from wallet import CreditPack, PaymentRecord, apply_credit_topup
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 
-# -----------------------------
-# Signature verification
-# -----------------------------
 def _get_webhook_secret() -> str:
     secret = os.getenv("RAZORPAY_WEBHOOK_SECRET") or os.getenv("RAZORPAY_WEBHOOK_SECRET_KEY")
     if not secret:
-        # fail safe
-        raise HTTPException(status_code=500, detail="RAZORPAY_WEBHOOK_SECRET not set on server")
+        # Don't crash app at import time; fail only when webhook is called.
+        raise ValueError("RAZORPAY_WEBHOOK_SECRET is not set")
     return secret
 
 
 def _verify_signature(body: bytes, signature: Optional[str]) -> None:
     """
-    Razorpay sends:
-      X-Razorpay-Signature = HMAC_SHA256(body, webhook_secret)
+    Razorpay sends header: X-Razorpay-Signature
+    Signature = HMAC_SHA256(body, webhook_secret) hex digest
     """
     if not signature:
         raise HTTPException(status_code=400, detail="Missing signature header")
 
-    secret = _get_webhook_secret()
+    try:
+        secret = _get_webhook_secret()
+    except ValueError as e:
+        # If secret isn't configured, we must reject (fail-safe).
+        raise HTTPException(status_code=500, detail=str(e))
+
     expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
     if not hmac.compare_digest(expected, signature):
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
 
-# -----------------------------
-# Safe JSON metadata handling
-# -----------------------------
-def _is_sqlalchemy_metadata_obj(x: Any) -> bool:
-    # Avoid importing SQLAlchemy MetaData class just for isinstance checks.
-    # MetaData typically has `.tables` and class name "MetaData".
-    try:
-        if x.__class__.__name__ == "MetaData":
-            return True
-        if hasattr(x, "tables") and hasattr(x, "schema"):
-            return True
-    except Exception:
-        pass
-    return False
-
-
-def _safe_get_record_meta(record: PaymentRecord) -> Dict[str, Any]:
+def _get_record_metadata(record: PaymentRecord) -> Dict[str, Any]:
     """
-    Return a mutable dict from PaymentRecord JSON column.
+    Safe getter for PaymentRecord JSON metadata.
+
     IMPORTANT:
-      - Use record.extra_metadata (synonym to tx_metadata) or record.tx_metadata.
-      - NEVER touch record.metadata.
+    - Never touch record.metadata (SQLAlchemy MetaData)
+    - Use record.tx_metadata or record.extra_metadata (synonym)
     """
-    # Prefer synonym if available
-    current = getattr(record, "extra_metadata", None)
-    if current is None:
-        current = getattr(record, "tx_metadata", None)
+    data = None
 
-    if _is_sqlalchemy_metadata_obj(current):
-        # This is the exact bug you hit. Throw it away.
+    # Prefer tx_metadata
+    if hasattr(record, "tx_metadata"):
+        data = getattr(record, "tx_metadata", None)
+
+    # Fallback to synonym name if present
+    if data is None and hasattr(record, "extra_metadata"):
+        data = getattr(record, "extra_metadata", None)
+
+    if data is None:
         return {}
 
-    if isinstance(current, dict):
-        return dict(current)  # copy to ensure mutability
+    if isinstance(data, dict):
+        return data
 
-    # Sometimes JSONB can come back as None or as a JSON string, handle both
-    if isinstance(current, str):
-        try:
-            parsed = json.loads(current)
-            if isinstance(parsed, dict):
-                return dict(parsed)
-        except Exception:
-            return {"_raw": current}
-
-    return {}
+    # If something weird got stored, coerce to dict safely
+    try:
+        return dict(data)  # type: ignore[arg-type]
+    except Exception:
+        return {}
 
 
-def _safe_set_record_meta(record: PaymentRecord, data: Dict[str, Any]) -> None:
+def _set_record_metadata(record: PaymentRecord, new_meta: Dict[str, Any]) -> None:
     """
-    Persist dict back into JSON column via safe attribute.
+    Safe setter for PaymentRecord JSON metadata.
+    Writes to tx_metadata (preferred), else extra_metadata.
     """
-    if not isinstance(data, dict):
-        data = {"_raw": str(data)}
-    # Use synonym if present
+    if hasattr(record, "tx_metadata"):
+        setattr(record, "tx_metadata", new_meta)
+        return
     if hasattr(record, "extra_metadata"):
-        setattr(record, "extra_metadata", data)
-    else:
-        setattr(record, "tx_metadata", data)
+        setattr(record, "extra_metadata", new_meta)
+        return
+
+    # If neither exists, we cannot store; but don't crash webhook.
+    return
 
 
-# -----------------------------
-# Helpers
-# -----------------------------
 def _find_payment_record(db: Session, order_id: str) -> Optional[PaymentRecord]:
     return (
         db.query(PaymentRecord)
@@ -127,25 +115,26 @@ def _find_payment_record(db: Session, order_id: str) -> Optional[PaymentRecord]:
     )
 
 
-def _extract_from_payload(payload: Dict[str, Any], event: str) -> Dict[str, Any]:
+def _extract_event_ids(payload: Dict[str, Any], event: str) -> Dict[str, Optional[Any]]:
     """
-    Return dict with: order_id, payment_id, amount, currency
-    Razorpay amounts are minor units.
+    Extract order_id, payment_id, amount, currency from common Razorpay payload shapes.
     """
     order_id = None
     payment_id = None
     amount = None
     currency = None
 
+    pl = payload.get("payload") or {}
+
     if event.startswith("payment."):
-        payment = (payload.get("payload") or {}).get("payment", {}).get("entity") or {}
+        payment = (pl.get("payment") or {}).get("entity") or {}
         order_id = payment.get("order_id")
         payment_id = payment.get("id")
         amount = payment.get("amount")
         currency = payment.get("currency")
 
     elif event.startswith("order."):
-        order = (payload.get("payload") or {}).get("order", {}).get("entity") or {}
+        order = (pl.get("order") or {}).get("entity") or {}
         order_id = order.get("id")
         amount = order.get("amount")
         currency = order.get("currency")
@@ -158,9 +147,6 @@ def _extract_from_payload(payload: Dict[str, Any], event: str) -> Dict[str, Any]
     }
 
 
-# -----------------------------
-# Webhook endpoint
-# -----------------------------
 @router.post("/razorpay")
 async def razorpay_webhook(
     request: Request,
@@ -169,28 +155,36 @@ async def razorpay_webhook(
 ) -> Dict[str, Any]:
     body = await request.body()
 
-    # 1) Verify signature
+    # 1) Verify signature (reject if bad)
     _verify_signature(body, x_razorpay_signature)
 
     # 2) Parse JSON
     try:
         payload = json.loads(body.decode("utf-8"))
-    except json.JSONDecodeError:
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON in webhook")
 
     event = (payload.get("event") or "").lower().strip()
 
-    interesting = {"payment.captured", "order.paid", "payment.failed", "order.payment_failed"}
-    if event not in interesting:
+    # Keep this tight (you can expand later)
+    relevant_events = {
+        "payment.captured",
+        "payment.failed",
+        "order.paid",
+        "order.payment_failed",
+    }
+
+    if event not in relevant_events:
         return {"status": "ignored", "event": event}
 
-    extracted = _extract_from_payload(payload, event)
-    order_id = extracted["order_id"]
-    payment_id = extracted["payment_id"]
-    amount = extracted["amount"]
-    currency = extracted["currency"]
+    ids = _extract_event_ids(payload, event)
+    order_id = ids["order_id"]
+    payment_id = ids["payment_id"]
+    amount = ids["amount"]
+    currency = ids["currency"]
 
     if not order_id:
+        # Acknowledge but do nothing
         return {"status": "no_order_id", "event": event}
 
     # 3) Find PaymentRecord
@@ -198,83 +192,113 @@ async def razorpay_webhook(
     if not record:
         return {"status": "no_matching_record", "event": event, "order_id": order_id}
 
-    # 4) Idempotency
-    if record.status == "completed":
+    # Idempotency: already completed -> do nothing
+    if getattr(record, "status", None) == "completed":
         return {"status": "already_completed", "event": event, "order_id": order_id}
 
-    # 5) Failure events
+    # 4) Failure events
     if event in {"payment.failed", "order.payment_failed"}:
         record.status = "failed"
-        meta = _safe_get_record_meta(record)
-        meta["failure_event"] = event
+        meta = _get_record_metadata(record)
+        meta.update(
+            {
+                "failure_event": event,
+                "order_id": order_id,
+                "payment_id": payment_id,
+            }
+        )
+        # Store raw payload (optional - can be large; keep if you want audit)
         meta["raw_payload"] = payload
-        _safe_set_record_meta(record, meta)
+        _set_record_metadata(record, meta)
         db.commit()
         return {"status": "marked_failed", "event": event, "order_id": order_id}
 
-    # 6) Success sanity check (amount/currency)
+    # 5) Success event: sanity check amount/currency if present
     if amount is not None and currency:
-        if int(amount) != int(record.amount_minor_units) or str(currency).upper() != str(record.currency).upper():
+        try:
+            if int(amount) != int(record.amount_minor_units) or str(currency).upper() != str(record.currency).upper():
+                record.status = "mismatch"
+                meta = _get_record_metadata(record)
+                meta.update(
+                    {
+                        "event": event,
+                        "order_id": order_id,
+                        "payment_id": payment_id,
+                        "expected_amount_minor_units": record.amount_minor_units,
+                        "got_amount_minor_units": amount,
+                        "expected_currency": record.currency,
+                        "got_currency": currency,
+                    }
+                )
+                meta["raw_payload"] = payload
+                _set_record_metadata(record, meta)
+                db.commit()
+                return {"status": "amount_currency_mismatch", "event": event, "order_id": order_id}
+        except Exception:
+            # If comparison fails for any reason, mark suspicious
             record.status = "mismatch"
-            meta = _safe_get_record_meta(record)
+            meta = _get_record_metadata(record)
             meta["raw_payload"] = payload
-            meta["expected_amount_minor_units"] = int(record.amount_minor_units)
-            meta["received_amount_minor_units"] = int(amount)
-            meta["expected_currency"] = str(record.currency)
-            meta["received_currency"] = str(currency)
-            _safe_set_record_meta(record, meta)
+            _set_record_metadata(record, meta)
             db.commit()
-            return {"status": "amount_currency_mismatch", "event": event, "order_id": order_id}
+            return {"status": "amount_currency_check_failed", "event": event, "order_id": order_id}
 
-    # 7) Load pack
+    # 6) Find pack
     pack = db.query(CreditPack).filter(CreditPack.pack_id == record.pack_id).first()
     if not pack:
         record.status = "pack_not_found"
-        meta = _safe_get_record_meta(record)
+        meta = _get_record_metadata(record)
+        meta.update({"event": event, "order_id": order_id, "payment_id": payment_id})
         meta["raw_payload"] = payload
-        _safe_set_record_meta(record, meta)
+        _set_record_metadata(record, meta)
         db.commit()
         return {"status": "pack_not_found", "event": event, "order_id": order_id}
 
-    credits = int(pack.credits)
+    # 7) Credit wallet
+    credits_to_add = int(pack.credits)
 
-    # 8) Apply credit topup
     try:
         apply_credit_topup(
             db=db,
-            user_id=int(record.user_id),
-            credits=credits,
+            user_id=record.user_id,
+            credits=credits_to_add,
             gateway="razorpay",
-            payment_id=payment_id or "",
+            payment_id=str(payment_id or ""),
             reason=f"topup_{pack.pack_id}",
-            metadata={"order_id": order_id, "payment_id": payment_id, "event": event},
+            metadata={
+                "event": event,
+                "order_id": order_id,
+                "payment_id": payment_id,
+                "pack_id": pack.pack_id,
+            },
         )
 
         record.status = "completed"
-        record.gateway_payment_id = payment_id
+        record.gateway_payment_id = str(payment_id or "")
 
-        meta = _safe_get_record_meta(record)
+        meta = _get_record_metadata(record)
+        meta.update({"event": event, "order_id": order_id, "payment_id": payment_id, "credited": credits_to_add})
         meta["raw_payload"] = payload
-        meta["credited_credits"] = credits
-        _safe_set_record_meta(record, meta)
+        _set_record_metadata(record, meta)
 
         db.commit()
-        return {
-            "status": "credited",
-            "event": event,
-            "order_id": order_id,
-            "user_id": int(record.user_id),
-            "credits_added": credits,
-        }
 
     except Exception as e:
         db.rollback()
         record.status = "error"
-        meta = _safe_get_record_meta(record)
-        meta["error"] = str(e)
+        meta = _get_record_metadata(record)
+        meta.update({"event": event, "order_id": order_id, "payment_id": payment_id, "error": str(e)})
         meta["raw_payload"] = payload
-        _safe_set_record_meta(record, meta)
+        _set_record_metadata(record, meta)
         db.commit()
 
-        # 200 so Razorpay doesn't keep retrying forever; we reconcile manually if needed
+        # Return 200 so Razorpay doesn't retry forever; you can monitor status='error'
         return {"status": "error_while_crediting", "event": event, "order_id": order_id}
+
+    return {
+        "status": "credited",
+        "event": event,
+        "order_id": order_id,
+        "user_id": record.user_id,
+        "credits_added": credits_to_add,
+    }
