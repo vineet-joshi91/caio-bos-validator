@@ -110,6 +110,7 @@ class CreditTransaction(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, nullable=False, index=True)
     api_key_id = Column(BigInteger, nullable=True)
+    delta_credits = Column(BigInteger, nullable=False)
     amount = Column(BigInteger, nullable=False)
     reason = Column(String(50), nullable=False)
     meta = Column(JSONB, nullable=True)
@@ -268,12 +269,14 @@ def apply_credit_topup(
     tx = CreditTransaction(
         user_id=user_id,
         api_key_id=None,
-        amount=credits,  # POSITIVE
+        delta_credits=credits,   # REQUIRED by DB
+        amount=credits,          # keep for compatibility
         reason=reason,
         gateway=gateway,
         gateway_payment_id=payment_id,
         extra_metadata=metadata or {},
     )
+
     db.add(tx)
 
     return wallet
