@@ -284,6 +284,10 @@ async def razorpay_webhook(
         db.commit()
 
     except Exception as e:
+        import traceback
+        print("WEBHOOK_CREDIT_ERROR:", str(e))
+        traceback.print_exc()
+
         db.rollback()
         record.status = "error"
         meta = _get_record_metadata(record)
