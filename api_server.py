@@ -100,9 +100,9 @@ def run_slm(
         input_json_path,
         "--brain",
         brain,
-        "--timeout-sec",
+        "--timeout",
         str(timeout_sec),
-        "--num-predict",
+        "--num_predict",
         str(num_predict),
     ]
     if model:
