@@ -326,6 +326,7 @@ async def upload_and_ea(
             "size_bytes": len(raw),
         },
         "document_text": text[:200000],  # safety cap
+        "facts": {},
         "meta": {"ingest": "upload-and-ea"},
     }
 
