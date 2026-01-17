@@ -24,6 +24,11 @@ try:
 except Exception:
     docx = None  # type: ignore
 
+try:
+    import openpyxl
+except Exception:
+    openpyxl = None  # type: ignore
+
 from wallet import (
     CreditWallet,
     CreditTransaction,
@@ -177,6 +182,23 @@ def _extract_text_from_upload(filename: str, data: bytes) -> str:
             return data.decode("utf-8")
         except Exception:
             return data.decode("utf-8", errors="ignore")
+    # Excel file
+    if name.endswith(".xlsx"):
+        if openpyxl is None:
+            return ""
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+            parts = []
+            for sheet in wb.worksheets:
+                parts.append(f"[Sheet: {sheet.title}]")
+                for row in sheet.iter_rows(values_only=True):
+                    # join non-empty cells
+                    cells = [str(c) for c in row if c is not None and str(c).strip() != ""]
+                    if cells:
+                        parts.append(" | ".join(cells))
+            return "\n".join(parts).strip()
+        except Exception:
+            return ""
 
     # Fallback: never crash on binary
     try:
