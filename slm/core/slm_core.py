@@ -134,6 +134,12 @@ def build_brain_prompt(pkt: Dict[str, Any], brain: str) -> str:
         "brain": brain.upper(),
         "bos_index": bos_index,
         "insights": insights[:6],
+    
+        # ✅ Evidence scaffolding (subject comes from content, not file type)
+        "source": pkt.get("source") or {},                 # filename/content_type/size if present
+        "facts": pkt.get("facts") or {},                   # optional, can be empty
+        "text_excerpt": (pkt.get("document_text") or pkt.get("text") or "")[:6000],
+    
         "top_findings": [
             {
                 "rule_id": f.get("rule_id"),
@@ -145,6 +151,7 @@ def build_brain_prompt(pkt: Dict[str, Any], brain: str) -> str:
             if str(f.get("rule_id", "")).lower().startswith(brain.lower())
         ],
     }
+
 
     schema_hint = {
         "plan": {
@@ -177,6 +184,10 @@ def build_brain_prompt(pkt: Dict[str, Any], brain: str) -> str:
         "- Use arrays for actions/kpis (no long prose strings).\n"
         "- Confidence 0.0..1.0.\n"
         "- Unknown metric => null.\n"
+        "- You MUST use evidence from DATA.text_excerpt and/or DATA.facts.\n"
+        "- Every priority/risk/action/KPI must reference at least one concrete detail from the document\n"
+        "  (numbers, deliverables, dates, terms) using parentheses at the end, e.g. \"Action... (Evidence: ₹130,000/mo)\".\n"
+        "- If the document evidence is insufficient, do NOT generalize — instead fill data_gaps with specific questions.\n"
         "Return ONLY the JSON."
     )
     return prompt

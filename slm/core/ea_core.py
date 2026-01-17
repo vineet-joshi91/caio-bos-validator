@@ -98,6 +98,12 @@ def build_ea_prompt(pkt: Dict[str, Any], per_brain: Dict[str, Any]) -> str:
     brief = {
         "bos_index": bos_index,
         "brain_indices": {k: _float(v, 0.0) for k, v in brain_indices.items()},
+    
+        # ✅ Evidence scaffolding
+        "source": pkt.get("source") or {},
+        "facts": pkt.get("facts") or {},
+        "text_excerpt": (pkt.get("document_text") or pkt.get("text") or "")[:8000],
+    
         "insights": {b: _take(insights_map.get(b, []), 6) for b in brains},
         "top_findings_sample": [
             {
@@ -109,6 +115,7 @@ def build_ea_prompt(pkt: Dict[str, Any], per_brain: Dict[str, Any]) -> str:
         ],
         "per_brain": {b: _brain_brief(b, per_brain.get(b, {}) or {}) for b in brains},
     }
+
 
     schema = _schema_hint()
 
@@ -124,6 +131,10 @@ def build_ea_prompt(pkt: Dict[str, Any], per_brain: Dict[str, Any]) -> str:
         "- 7-day and 30-day actions should be cross-functional and non-duplicative.\n"
         "- owner_matrix keys must be CFO/CMO/COO/CHRO/CPO, each with 1-5 clear actions.\n"
         "- Confidence is 0.0..1.0.\n"
+        "- You MUST ground priorities/risks/actions in the document evidence (DATA.text_excerpt / DATA.facts).\n"
+        "- Do NOT output generic strategy language. If you cannot cite evidence, put it in key_risks as \"Insufficient evidence: ...\".\n"
+        "- cross_brain_actions_7d and cross_brain_actions_30d must be concrete and measurable (include numbers/terms when available).\n"
+        "- owner_matrix actions must reference the document (deliverables, costs, milestones) using parentheses, e.g. \"... (Evidence: 10% rev share)\".\n"
         "Return ONLY the JSON."
     )
     return prompt
