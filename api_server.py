@@ -221,6 +221,27 @@ def welcome():
 
 @app.post("/run-ea")
 def run_ea(payload: EARequest):
+    # --- Guard: prevent empty Decision Review packets (avoid timeouts / fluff) ---
+    pkt = payload.packet or {}
+    findings = pkt.get("findings") or []
+    insights_map = pkt.get("insights") or {}
+    document_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
+
+    has_insights = False
+    if isinstance(insights_map, dict):
+        for b in ["cfo", "cmo", "coo", "chro", "cpo", "ea"]:
+            if insights_map.get(b):
+                has_insights = True
+                break
+    else:
+        has_insights = bool(insights_map)
+
+    if (not findings) and (not has_insights) and (not document_text):
+        raise HTTPException(
+            status_code=400,
+            detail="Decision Review requires findings/insights or document_text. Upload a file (Analyze) or provide a populated validator packet."
+        )
+
     # Charge credits (if configured)
     try:
         charge_bos_run(payload.user_id, payload.plan_tier)
@@ -245,6 +266,7 @@ def run_ea(payload: EARequest):
     if "error" in out and "ui" not in out:
         return {"ui": out}
     return out
+
 
 @app.post("/run-brain")
 def run_brain(payload: BrainRequest):
