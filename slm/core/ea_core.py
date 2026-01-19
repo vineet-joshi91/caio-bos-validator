@@ -180,7 +180,30 @@ def coerce_ea_json(raw_text: str) -> EAOutput:
         norm_owner_matrix[k] = _take(v if isinstance(v, list) else [], 6)
 
     conf = _float(obj.get("confidence", 0.8), 0.8)
+    
+    # --- Fallback: if model left owner_matrix empty, derive from cross_brain_actions_7d ---
+    if all(len(v) == 0 for v in norm_owner_matrix.values()):
+        actions = a7 if isinstance(a7, list) else []
+        owners_rr = ["CFO", "CMO", "COO", "CHRO", "CPO"]
+        rr_i = 0
+    
+        for act in actions:
+            if not isinstance(act, str):
+                continue
+    
+            # If action is prefixed like "CFO: ..." map directly
+            prefix = act.split(":", 1)[0].strip().upper() if ":" in act else ""
+            if prefix in owners_rr and ":" in act:
+                norm_owner_matrix[prefix].append(act.split(":", 1)[1].strip())
+            else:
+                norm_owner_matrix[owners_rr[rr_i % len(owners_rr)]].append(act.strip())
+                rr_i += 1
+    
+        # cap to 3 actions per owner
+        for k in owners_rr:
+            norm_owner_matrix[k] = _take(norm_owner_matrix[k], 3)
 
+    
     return EAOutput(
         executive_summary=exec_summary,
         top_priorities=top_priorities,
