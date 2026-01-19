@@ -125,16 +125,20 @@ def build_ea_prompt(pkt: Dict[str, Any], per_brain: Dict[str, Any]) -> str:
         "SCHEMA (return EXACTLY this shape, no extra keys):\n"
         + json.dumps(schema, ensure_ascii=False) + "\n\n"
         "RULES:\n"
-        "- Be concise, board-ready, and action-focused.\n"
+        "- You MUST use the document evidence in DATA.text_excerpt and/or DATA.facts.\n"
+        "- You are NOT allowed to return empty fields.\n"
+        "  * executive_summary must be 2–4 sentences.\n"
+        "  * top_priorities must have 3–5 items.\n"
+        "  * key_risks must have 2–6 items.\n"
+        "  * cross_brain_actions_7d must have 5 items (CFO/CMO/COO/CHRO/CPO each at least 1).\n"
+        "  * cross_brain_actions_30d must have 5 items (CFO/CMO/COO/CHRO/CPO each at least 1).\n"
+        "  * owner_matrix must contain CFO/CMO/COO/CHRO/CPO with 1–3 actions each.\n"
+        "- Every item must cite evidence in parentheses, e.g. \"Do X (Evidence: ₹130,000/mo)\".\n"
+        "- If the document lacks evidence, DO NOT generalize. Instead:\n"
+        "  * put a priority like \"Clarify missing scope/details (Evidence: missing in document)\"\n"
+        "  * and put risks like \"Insufficient evidence to estimate ROI (Evidence: no baseline metrics)\".\n"
         "- Use simple bullet phrases, not long paragraphs.\n"
-        "- Top 5 priorities max; Top 6 risks max.\n"
-        "- 7-day and 30-day actions should be cross-functional and non-duplicative.\n"
-        "- owner_matrix keys must be CFO/CMO/COO/CHRO/CPO, each with 1-5 clear actions.\n"
         "- Confidence is 0.0..1.0.\n"
-        "- You MUST ground priorities/risks/actions in the document evidence (DATA.text_excerpt / DATA.facts).\n"
-        "- Do NOT output generic strategy language. If you cannot cite evidence, put it in key_risks as \"Insufficient evidence: ...\".\n"
-        "- cross_brain_actions_7d and cross_brain_actions_30d must be concrete and measurable (include numbers/terms when available).\n"
-        "- owner_matrix actions must reference the document (deliverables, costs, milestones) using parentheses, e.g. \"... (Evidence: 10% rev share)\".\n"
         "Return ONLY the JSON."
     )
     return prompt
@@ -149,6 +153,12 @@ def coerce_ea_json(raw_text: str) -> EAOutput:
     """
     try:
         obj = json.loads(raw_text)
+        if not _string(obj.get("executive_summary", "")).strip() and not any(
+            _take(obj.get(k), 1) for k in ["top_priorities", "key_risks", "cross_brain_actions_7d", "cross_brain_actions_30d"]
+        ):
+            obj["executive_summary"] = "Model returned empty output. Re-run with stronger evidence or a shorter excerpt."
+            obj["key_risks"] = ["Empty model output (Evidence: model returned blank fields)"]
+
     except Exception:
         obj = {}
 
