@@ -143,6 +143,30 @@ def build_ea_prompt(pkt: Dict[str, Any], per_brain: Dict[str, Any]) -> str:
     )
     return prompt
 
+def build_ea_doc_prompt(pkt: Dict[str, Any]) -> str:
+    text_excerpt = (pkt.get("document_text") or pkt.get("text") or "")[:9000]
+    source = pkt.get("source") or {}
+    schema = _schema_hint()
+
+    prompt = (
+        "You are an executive planning engine. Create a concrete, evidence-based Executive Action Plan.\n\n"
+        "DOCUMENT SOURCE:\n" + json.dumps(source, ensure_ascii=False) + "\n\n"
+        "DOCUMENT TEXT EXCERPT:\n" + json.dumps(text_excerpt, ensure_ascii=False) + "\n\n"
+        "SCHEMA (return EXACTLY this shape, no extra keys):\n"
+        + json.dumps(schema, ensure_ascii=False) + "\n\n"
+        "RULES:\n"
+        "- You MUST NOT return empty fields.\n"
+        "- executive_summary must be 2–4 sentences.\n"
+        "- top_priorities must have 3–5 items.\n"
+        "- key_risks must have 2–6 items.\n"
+        "- cross_brain_actions_7d must have 5 items.\n"
+        "- cross_brain_actions_30d must have 5 items.\n"
+        "- owner_matrix must contain CFO/CMO/COO/CHRO/CPO with 1–3 actions each.\n"
+        "- Every item must cite evidence in parentheses from the excerpt.\n"
+        "- If evidence is insufficient, explicitly say so in risks/actions.\n"
+        "Return ONLY the JSON."
+    )
+    return prompt
 
 # -----------------------------
 # Public: coerce model output

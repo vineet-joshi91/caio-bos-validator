@@ -4,7 +4,7 @@ import json
 from typing import Dict, Any, List
 
 from slm.core.slm_core import OllamaRunner, PROMPT_SYSTEM
-from slm.core.ea_core import build_ea_prompt, coerce_ea_json, ea_output_to_dict
+from slm.core.ea_core import build_ea_prompt, build_ea_doc_prompt, coerce_ea_json, ea_output_to_dict
 
 
 def _normalize_per_brain(per_brain: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -257,11 +257,19 @@ def run(
       (Charts are only added if relevant data is present.)
     Returns a dict ready to print/dump as JSON.
     """
-    # 1) Normalize inputs
     per_brain_norm = _normalize_per_brain(per_brain)
 
-    # 2) Build prompt
-    prompt = build_ea_prompt(pkt, per_brain_norm)
+    # If per_brain is empty (upload/doc analysis path), use the document-first EA prompt.
+    has_brains = any(
+        (b in per_brain_norm and isinstance(per_brain_norm.get(b), dict) and per_brain_norm.get(b))
+        for b in ["cfo", "cmo", "coo", "chro", "cpo"]
+    )
+    
+    if not has_brains:
+        prompt = build_ea_doc_prompt(pkt)
+    else:
+        prompt = build_ea_prompt(pkt, per_brain_norm)
+
 
     # 3) Call Ollama
     runner = OllamaRunner(
