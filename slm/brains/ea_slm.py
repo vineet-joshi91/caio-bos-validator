@@ -6,7 +6,6 @@ from typing import Dict, Any, List
 from slm.core.slm_core import OllamaRunner, PROMPT_SYSTEM
 from slm.core.ea_core import build_ea_prompt, build_ea_doc_prompt, coerce_ea_json, ea_output_to_dict
 
-
 def _normalize_per_brain(per_brain: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """
     Make sure each brain payload is a plain dict with
@@ -259,16 +258,16 @@ def run(
     """
     per_brain_norm = _normalize_per_brain(per_brain)
 
-    # If per_brain is empty (upload/doc analysis path), use the document-first EA prompt.
-    has_brains = any(
-        (b in per_brain_norm and isinstance(per_brain_norm.get(b), dict) and per_brain_norm.get(b))
-        for b in ["cfo", "cmo", "coo", "chro", "cpo"]
-    )
+    # Decide EA mode:
+    # - If document_text exists (Upload & Analyze), always use document-first EA prompt.
+    # - Otherwise (true validator flow), use fusion prompt.
+    doc_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
     
-    if not has_brains:
+    if doc_text:
         prompt = build_ea_doc_prompt(pkt)
     else:
         prompt = build_ea_prompt(pkt, per_brain_norm)
+
 
 
     # 3) Call Ollama
