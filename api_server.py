@@ -329,6 +329,12 @@ async def upload_and_ea(
 
     # Document path (PDF/DOCX/TXT/other)
     text = _extract_text_from_upload(filename, raw)
+    
+    print(
+    f"[UPLOAD] filename={filename} "
+    f"len={len(text)} "
+    f"preview={text[:200]!r}"
+)
 
     if not text or len(text.strip()) < 20:
         return {
