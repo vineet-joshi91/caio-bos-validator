@@ -6,6 +6,59 @@ from typing import Dict, Any, List
 from slm.core.slm_core import OllamaRunner, PROMPT_SYSTEM
 from slm.core.ea_core import build_ea_prompt, build_ea_doc_prompt, coerce_ea_json, ea_output_to_dict
 
+def _is_empty_ea_obj(d: Dict[str, Any]) -> bool:
+    if not isinstance(d, dict):
+        return True
+    if (d.get("executive_summary") or "").strip():
+        return False
+    for k in ["top_priorities", "key_risks", "cross_brain_actions_7d", "cross_brain_actions_30d"]:
+        v = d.get(k)
+        if isinstance(v, list) and len(v) > 0:
+            return False
+    om = d.get("owner_matrix")
+    if isinstance(om, dict) and any(isinstance(v, list) and v for v in om.values()):
+        return False
+    return True
+
+
+def _fallback_nonempty_ea() -> Dict[str, Any]:
+    return {
+        "executive_summary": "The model returned an empty plan. This is a safe fallback. Re-run after strengthening evidence extraction or prompts.",
+        "top_priorities": [
+            "Extract key facts (pricing, deliverables, timelines) from the document",
+            "Define success KPIs and reporting cadence",
+            "Assign owners and dependencies",
+        ],
+        "key_risks": [
+            "Empty model output (Evidence: model returned blank fields)",
+            "Insufficient evidence in excerpt (Evidence: missing or unclear document details)",
+        ],
+        "cross_brain_actions_7d": [
+            "CFO: Confirm commercial terms and budget ceiling (Evidence: document terms)",
+            "CMO: Convert deliverables into a 30-day content calendar (Evidence: listed deliverables)",
+            "COO: Define workflow + approvals + cadence (Evidence: execution requirement)",
+            "CHRO: Assign roles/owners and capacity plan (Evidence: resourcing implied)",
+            "CPO: Vendor/SLA checklist for external deliverables (Evidence: quotation/proposal)",
+        ],
+        "cross_brain_actions_30d": [
+            "CFO: Define ROI model and tracking (Evidence: revenue/lead outcomes)",
+            "CMO: Launch content pipeline and measure engagement baseline (Evidence: content scope)",
+            "COO: Implement weekly execution review (Evidence: timeline requirement)",
+            "CHRO: Define accountability + incentives (Evidence: execution governance)",
+            "CPO: Finalize vendor milestones and acceptance criteria (Evidence: quotation scope)",
+        ],
+        "owner_matrix": {
+            "CFO": ["Confirm terms + ROI model"],
+            "CMO": ["Build content calendar + KPI baseline"],
+            "COO": ["Execution cadence + operational workflow"],
+            "CHRO": ["Resourcing + accountability"],
+            "CPO": ["Vendor milestones + acceptance criteria"],
+        },
+        "confidence": 0.4,
+        "tools": {"charts": []},
+    }
+    
+
 def _normalize_per_brain(per_brain: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """
     Make sure each brain payload is a plain dict with
@@ -282,9 +335,45 @@ def run(
     )
     raw = runner.infer(prompt=prompt, system=PROMPT_SYSTEM)
 
-    # 4) Coerce to stable JSON
-    ea_obj = coerce_ea_json(raw)
-    out = ea_output_to_dict(ea_obj)
+    # Try to parse the JSON directly first (before coerce)
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else {}
+    except Exception:
+        parsed = {}
+    
+    # If empty output, retry once with stricter instruction
+    if _is_empty_ea_obj(parsed):
+        retry_prompt = (
+            prompt
+            + "\n\nIMPORTANT: Your previous output was EMPTY. You MUST fill every field with non-empty content. "
+              "If evidence is missing, explicitly write 'Insufficient evidence' items rather than leaving arrays empty."
+        )
+        runner2 = OllamaRunner(
+            model=model,
+            host=host,
+            timeout_sec=timeout_sec,
+            num_predict=num_predict,
+            temperature=0.0,   # stricter
+            top_p=top_p,
+            repeat_penalty=repeat_penalty,
+        )
+        raw2 = runner2.infer(prompt=retry_prompt, system=PROMPT_SYSTEM)
+        try:
+            parsed2 = json.loads(raw2) if isinstance(raw2, str) else {}
+        except Exception:
+            parsed2 = {}
+    
+        if not _is_empty_ea_obj(parsed2):
+            raw = raw2
+            parsed = parsed2
+    
+    # If still empty after retry, force a non-empty fallback
+    if _is_empty_ea_obj(parsed):
+        out = _fallback_nonempty_ea()
+    else:
+        ea_obj = coerce_ea_json(raw)
+        out = ea_output_to_dict(ea_obj)
+
 
     # 5) Attach meta for traceability
     out["_meta"] = {
