@@ -311,20 +311,19 @@ def run(
     """
     per_brain_norm = _normalize_per_brain(per_brain)
 
-    # Decide EA mode:
+        # Decide EA mode:
     # - If document_text exists (Upload & Analyze), always use document-first EA prompt.
     # - Otherwise (true validator flow), use fusion prompt.
     doc_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
-    print(f"[EA] doc_text_len={len(doc_text)} per_brain_keys={list((per_brain or {}).keys())}")
-    
-    mode = "doc" if doc_text else "fusion"
-    print(f"[EA] mode={mode}")
+    doc_text_len = len(doc_text)
+    mode = "doc" if doc_text_len > 0 else "fusion"
 
-    
-    if doc_text:
+    if mode == "doc":
         prompt = build_ea_doc_prompt(pkt)
     else:
         prompt = build_ea_prompt(pkt, per_brain_norm)
+
+
 
 
 
@@ -387,7 +386,10 @@ def run(
         "bytes_in": len(prompt),
         "bytes_out": len(raw) if isinstance(raw, str) else 0,
         "confidence": out.get("confidence", 0.8),
+        "mode": mode,
+        "doc_text_len": doc_text_len,
     }
+
 
     # 6) Attach EA-level charts (budget umbrella + profit comparison)
     tools: Dict[str, Any] = out.setdefault("tools", {})
