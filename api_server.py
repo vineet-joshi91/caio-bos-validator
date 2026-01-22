@@ -351,6 +351,8 @@ async def upload_and_ea(
         "facts": {},
         "meta": {"ingest": "upload-and-ea"},
     }
+    packet["meta"]["doc_text_len"] = len(text)
+    packet["meta"]["doc_text_preview"] = text[:400]
 
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w", encoding="utf-8") as tf:
         json.dump(packet, tf, ensure_ascii=False, indent=2)
