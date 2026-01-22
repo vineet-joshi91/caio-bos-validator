@@ -351,6 +351,7 @@ async def upload_and_ea(
         "facts": {},
         "meta": {"ingest": "upload-and-ea"},
     }
+    
     packet["meta"]["doc_text_len"] = len(text)
     packet["meta"]["doc_text_preview"] = text[:400]
 
