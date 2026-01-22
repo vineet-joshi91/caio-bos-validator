@@ -315,6 +315,11 @@ def run(
     # - If document_text exists (Upload & Analyze), always use document-first EA prompt.
     # - Otherwise (true validator flow), use fusion prompt.
     doc_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
+    print(f"[EA] doc_text_len={len(doc_text)} per_brain_keys={list((per_brain or {}).keys())}")
+    
+    mode = "doc" if doc_text else "fusion"
+    print(f"[EA] mode={mode}")
+
     
     if doc_text:
         prompt = build_ea_doc_prompt(pkt)
