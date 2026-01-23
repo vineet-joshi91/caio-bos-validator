@@ -144,29 +144,41 @@ def build_ea_prompt(pkt: Dict[str, Any], per_brain: Dict[str, Any]) -> str:
     return prompt
 
 def build_ea_doc_prompt(pkt: Dict[str, Any]) -> str:
-    text_excerpt = (pkt.get("document_text") or pkt.get("text") or "")[:9000]
+    """
+    Document-first EA prompt.
+    Uses pkt['document_text'] (or pkt['text']) and produces the EA schema output.
+    """
     source = pkt.get("source") or {}
+    facts = pkt.get("facts") or {}
+
+    doc_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
+    text_excerpt = doc_text[:9000]  # keep prompt bounded
+
     schema = _schema_hint()
 
     prompt = (
-        "You are an executive planning engine. Create a concrete, evidence-based Executive Action Plan.\n\n"
-        "DOCUMENT SOURCE:\n" + json.dumps(source, ensure_ascii=False) + "\n\n"
-        "DOCUMENT TEXT EXCERPT:\n" + json.dumps(text_excerpt, ensure_ascii=False) + "\n\n"
+        "You are an executive planning engine. Produce a concrete, evidence-based Executive Action Plan.\n"
+        "You MUST use the provided document excerpt as your primary evidence.\n\n"
+        "SOURCE:\n" + json.dumps(source, ensure_ascii=False) + "\n\n"
+        "FACTS (may be empty):\n" + json.dumps(facts, ensure_ascii=False) + "\n\n"
+        "DOCUMENT_EXCERPT:\n" + json.dumps(text_excerpt, ensure_ascii=False) + "\n\n"
         "SCHEMA (return EXACTLY this shape, no extra keys):\n"
         + json.dumps(schema, ensure_ascii=False) + "\n\n"
         "RULES:\n"
-        "- You MUST NOT return empty fields.\n"
-        "- executive_summary must be 2–4 sentences.\n"
-        "- top_priorities must have 3–5 items.\n"
-        "- key_risks must have 2–6 items.\n"
-        "- cross_brain_actions_7d must have 5 items.\n"
-        "- cross_brain_actions_30d must have 5 items.\n"
-        "- owner_matrix must contain CFO/CMO/COO/CHRO/CPO with 1–3 actions each.\n"
-        "- Every item must cite evidence in parentheses from the excerpt.\n"
-        "- If evidence is insufficient, explicitly say so in risks/actions.\n"
+        "- You are NOT allowed to return empty fields.\n"
+        "  * executive_summary must be 2–4 sentences.\n"
+        "  * top_priorities must have 3–5 items.\n"
+        "  * key_risks must have 2–6 items.\n"
+        "  * cross_brain_actions_7d must have 5 items (CFO/CMO/COO/CHRO/CPO each at least 1).\n"
+        "  * cross_brain_actions_30d must have 5 items (CFO/CMO/COO/CHRO/CPO each at least 1).\n"
+        "  * owner_matrix must contain CFO/CMO/COO/CHRO/CPO with 1–3 actions each.\n"
+        "- Every item MUST cite evidence in parentheses from DOCUMENT_EXCERPT or FACTS.\n"
+        "  Example: \"Confirm pricing model (Evidence: ₹130,000/month + 10% revenue share)\".\n"
+        "- If evidence is missing, DO NOT generalize; write \"Insufficient evidence: <what>\" as a risk/action.\n"
         "Return ONLY the JSON."
     )
     return prompt
+
 
 # -----------------------------
 # Public: coerce model output
