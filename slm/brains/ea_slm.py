@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import Dict, Any, List
 
+import re
+
 from slm.core.slm_core import OllamaRunner, PROMPT_SYSTEM
 from slm.core.ea_core import build_ea_prompt, build_ea_doc_prompt, coerce_ea_json, ea_output_to_dict
 
@@ -283,7 +285,7 @@ def _build_ea_charts(pkt: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     return charts
 
-import re
+
 
 def _extract_facts_from_doc(text: str) -> Dict[str, Any]:
     t = text or ""
@@ -390,7 +392,7 @@ def run(
     """
     per_brain_norm = _normalize_per_brain(per_brain)
 
-        # Decide EA mode:
+    # Decide EA mode:
     # - If document_text exists (Upload & Analyze), always use document-first EA prompt.
     # - Otherwise (true validator flow), use fusion prompt.
     doc_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
@@ -452,7 +454,7 @@ def run(
     
     # If still empty after retry, force a non-empty fallback
     if _is_empty_ea_obj(parsed):
-        out = _fallback_from_doc()
+        out = _fallback_from_doc(doc_text)
     else:
         ea_obj = coerce_ea_json(raw)
         out = ea_output_to_dict(ea_obj)
