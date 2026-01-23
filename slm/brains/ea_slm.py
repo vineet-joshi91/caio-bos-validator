@@ -291,15 +291,37 @@ def _extract_facts_from_doc(text: str) -> Dict[str, Any]:
     t = text or ""
 
     # money + percentages
-    money = re.findall(r"(₹\s?\d[\d,]*(?:\.\d+)?)", t)
+    money = []
+
+    # ₹ amounts (with commas)
+    money += re.findall(r"(₹\s*\d[\d,]*(?:\.\d+)?)", t)
+    
+    # Rs / INR formats
+    money += re.findall(r"((?:Rs\.?|INR)\s*\d[\d,]*(?:\.\d+)?)", t, flags=re.IGNORECASE)
+    
+    # numbers that look like prices (e.g., 130000, 1,30,000) near keywords
+    money += re.findall(r"(\d[\d,]{2,})\s*(?:per\s*month|/month|monthly|pm)", t, flags=re.IGNORECASE)
+    
+    # normalize / dedupe
+    money = [m.strip() for m in money]
+    money = list(dict.fromkeys(money))[:8]
+
     perc = re.findall(r"(\d{1,3}\s?%)(?!\w)", t)
     dates = re.findall(r"\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b", t)
 
     # quick deliverable keywords (customize later)
+    deliverable_phrases = [
+    "podcast", "vodcast", "masterclass", "reels", "shorts",
+    "long-form", "long form", "youtube", "instagram", "linkedin",
+    "case study", "webinar", "newsletter"
+    ]
     deliverable_hits = []
-    for kw in ["podcast", "vodcast", "masterclass", "reel", "short", "long", "video", "youtube", "instagram", "linkedin"]:
-        if re.search(rf"\b{kw}\b", t, flags=re.IGNORECASE):
+    for kw in deliverable_phrases:
+        if re.search(rf"\b{re.escape(kw)}\b", t, flags=re.IGNORECASE):
             deliverable_hits.append(kw)
+    
+    deliverables = list(dict.fromkeys(deliverable_hits))[:12]
+
 
     # take first few meaningful lines as context bullets
     lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
@@ -322,8 +344,9 @@ def _fallback_from_doc(doc_text: str) -> Dict[str, Any]:
     date = facts["dates"][0] if facts["dates"] else "date not found"
 
     evidence = f"Evidence: {money}; {perc}; deliverables: {dels}; date: {date}"
-
+    preview = " | ".join(facts.get("sample_lines", [])[:4])
     return {
+        
         "executive_summary": (
             f"Document-first plan generated via deterministic extraction because the model returned an empty schema. "
             f"This proposal centers on organic content-led growth with defined deliverables and commercial terms. ({evidence})"
