@@ -288,50 +288,74 @@ def _build_ea_charts(pkt: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _extract_facts_from_doc(text: str) -> Dict[str, Any]:
+    import re
+
     t = text or ""
 
-    # money + percentages
-    money = []
-
-    # ₹ amounts (with commas)
-    money += re.findall(r"(₹\s*\d[\d,]*(?:\.\d+)?)", t)
-    
-    # Rs / INR formats
-    money += re.findall(r"((?:Rs\.?|INR)\s*\d[\d,]*(?:\.\d+)?)", t, flags=re.IGNORECASE)
-    
-    # numbers that look like prices (e.g., 130000, 1,30,000) near keywords
-    money += re.findall(r"(\d[\d,]{2,})\s*(?:per\s*month|/month|monthly|pm)", t, flags=re.IGNORECASE)
-    
-    # normalize / dedupe
-    money = [m.strip() for m in money]
-    money = list(dict.fromkeys(money))[:8]
-
-    perc = re.findall(r"(\d{1,3}\s?%)(?!\w)", t)
-    dates = re.findall(r"\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b", t)
-
-    # quick deliverable keywords (customize later)
-    deliverable_phrases = [
-    "podcast", "vodcast", "masterclass", "reels", "shorts",
-    "long-form", "long form", "youtube", "instagram", "linkedin",
-    "case study", "webinar", "newsletter"
-    ]
-    deliverable_hits = []
-    for kw in deliverable_phrases:
-        if re.search(rf"\b{re.escape(kw)}\b", t, flags=re.IGNORECASE):
-            deliverable_hits.append(kw)
-    
-    deliverables = list(dict.fromkeys(deliverable_hits))[:12]
-
+    # --- Normalize common PDF extraction artifacts ---
+    # remove zero-width chars, normalize weird spaces, collapse whitespace
+    t = re.sub(r"[\u200b-\u200f\u202a-\u202e\u2060]", "", t)
+    t = t.replace("\u00a0", " ")  # NBSP -> space
+    t = t.replace("ﬁ", "fi")      # ligature fixes sometimes appear in PDFs
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r"\n{3,}", "\n\n", t).strip()
 
     # take first few meaningful lines as context bullets
     lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
     sample_lines = lines[:12]
 
+    # --- money + percentages + dates ---
+    money: list[str] = []
+
+    # ₹ amounts (allow optional commas and optional decimals)
+    money += re.findall(r"(₹\s*\d[\d,]*(?:\.\d+)?)", t)
+
+    # Rs / INR formats
+    money += re.findall(r"((?:Rs\.?|INR)\s*\d[\d,]*(?:\.\d+)?)", t, flags=re.IGNORECASE)
+
+    # numbers that look like prices near monthly terms (allow whitespace/newlines between)
+    money += re.findall(
+        r"(\d[\d,]{2,})\s*(?:per\s*month|/month|monthly|pm)",
+        t,
+        flags=re.IGNORECASE,
+    )
+
+    # monthly terms split across newlines: "130,000\nper\nmonth"
+    money += re.findall(
+        r"(\d[\d,]{2,})\s*(?:\n|\s)*per\s*(?:\n|\s)*month",
+        t,
+        flags=re.IGNORECASE,
+    )
+
+    # normalize / dedupe money
+    money = [m.strip() for m in money if str(m).strip()]
+    money = list(dict.fromkeys(money))[:8]
+
+    perc = re.findall(r"(\d{1,3}\s?%)(?!\w)", t)
+    perc = [p.strip() for p in perc if p.strip()]
+    perc = list(dict.fromkeys(perc))[:8]
+
+    dates = re.findall(r"\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b", t)
+    dates = list(dict.fromkeys(dates))[:8]
+
+    # --- deliverables / channels ---
+    deliverable_phrases = [
+        "podcast", "vodcast", "masterclass", "reels", "shorts",
+        "long-form", "long form", "youtube", "instagram", "linkedin",
+        "case study", "webinar", "newsletter",
+        "short video", "long video", "content calendar", "content strategy",
+    ]
+    deliverable_hits: list[str] = []
+    for kw in deliverable_phrases:
+        if re.search(rf"\b{re.escape(kw)}\b", t, flags=re.IGNORECASE):
+            deliverable_hits.append(kw)
+    deliverables = list(dict.fromkeys(deliverable_hits))[:12]
+
     return {
-        "money": list(dict.fromkeys(money))[:5],
-        "percent": list(dict.fromkeys(perc))[:5],
-        "dates": list(dict.fromkeys(dates))[:5],
-        "deliverables": list(dict.fromkeys(deliverable_hits))[:12],
+        "money": money[:5],
+        "percent": perc[:5],
+        "dates": dates[:5],
+        "deliverables": deliverables,
         "sample_lines": sample_lines,
     }
 
@@ -343,8 +367,9 @@ def _fallback_from_doc(doc_text: str) -> Dict[str, Any]:
     dels = ", ".join(facts["deliverables"]) if facts["deliverables"] else "deliverables unclear"
     date = facts["dates"][0] if facts["dates"] else "date not found"
 
-    evidence = f"Evidence: {money}; {perc}; deliverables: {dels}; date: {date}"
     preview = " | ".join(facts.get("sample_lines", [])[:4])
+    evidence = f"Evidence: {money}; {perc}; deliverables: {dels}; date: {date}. Preview: {preview}"
+
     return {
         
         "executive_summary": (
