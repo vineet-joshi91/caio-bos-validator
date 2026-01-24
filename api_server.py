@@ -161,7 +161,7 @@ def _extract_text_from_upload(filename: str, data: bytes) -> str:
                 t = page.extract_text() or ""
                 if t:
                     parts.append(t)
-            return "\\n\\n".join(parts).strip()
+            return "\n\n".join(parts).strip()
         except Exception:
             return ""
 
@@ -172,7 +172,7 @@ def _extract_text_from_upload(filename: str, data: bytes) -> str:
         try:
             d = docx.Document(io.BytesIO(data))
             parts = [p.text for p in d.paragraphs if p.text]
-            return "\\n".join(parts).strip()
+            return "\n".join(parts).strip()
         except Exception:
             return ""
 

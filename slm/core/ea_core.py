@@ -152,18 +152,25 @@ def build_ea_doc_prompt(pkt: Dict[str, Any]) -> str:
     facts = pkt.get("facts") or {}
 
     doc_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
-    text_excerpt = doc_text[:9000]  # keep prompt bounded
+    if not doc_text:
+        raise ValueError("No document_text extracted; cannot build EA prompt.")
+    
+    if len(doc_text) > 9000:
+        text_excerpt = doc_text[:6000] + "\n\n--- [TRUNCATED] ---\n\n" + doc_text[-3000:]
+    else:
+        text_excerpt = doc_text
 
+    
     schema = _schema_hint()
 
     prompt = (
         "You are an executive planning engine. Produce a concrete, evidence-based Executive Action Plan.\n"
         "You MUST use the provided document excerpt as your primary evidence.\n\n"
-        "SOURCE:\n" + json.dumps(source, ensure_ascii=False) + "\n\n"
-        "FACTS (may be empty):\n" + json.dumps(facts, ensure_ascii=False) + "\n\n"
-        "DOCUMENT_EXCERPT:\n" + json.dumps(text_excerpt, ensure_ascii=False) + "\n\n"
+        "SOURCE:\n```json\n" + json.dumps(source, ensure_ascii=False, indent=2) + "\n```\n\n"
+        "FACTS (may be empty):\n```json\n" + json.dumps(facts, ensure_ascii=False, indent=2) + "\n```\n\n"
+        "DOCUMENT_EXCERPT (verbatim):\n```text\n" + (text_excerpt or "").strip() + "\n```\n\n"
         "SCHEMA (return EXACTLY this shape, no extra keys):\n"
-        + json.dumps(schema, ensure_ascii=False) + "\n\n"
+        + json.dumps(schema, ensure_ascii=False, indent=2) + "\n\n"
         "RULES:\n"
         "- You are NOT allowed to return empty fields.\n"
         "  * executive_summary must be 2–4 sentences.\n"
