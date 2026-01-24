@@ -29,6 +29,24 @@ try:
 except Exception:
     openpyxl = None  # type: ignore
 
+import csv
+
+try:
+    import pdfplumber
+except Exception:
+    pdfplumber = None
+
+try:
+    import pytesseract
+except Exception:
+    pytesseract = None
+
+try:
+    from PIL import Image
+except Exception:
+    Image = None
+
+
 from wallet import (
     CreditWallet,
     CreditTransaction,
@@ -145,44 +163,175 @@ def run_slm(
 
 def _extract_text_from_upload(filename: str, data: bytes) -> str:
     """
-    Extract usable text from common file types.
-    Never raises UnicodeDecodeError.
+    Extract usable text from common file types with fallbacks.
+    - PDFs: pypdf -> pdfplumber -> OCR (optional) if still too short
+    - DOCX: paragraphs + tables
+    - XLSX: all sheets, row-wise
+    - CSV/TSV: delimiter sniff + robust decoding
+    - Images: OCR (optional)
+    Always returns a string; never raises UnicodeDecodeError.
     """
     name = (filename or "").lower().strip()
 
-    # PDF
-    if name.endswith(".pdf"):
+    # --- Safety caps ---
+    MAX_TEXT_CHARS = 250_000      # hard cap to keep packets sane
+    PDF_MIN_TEXT_CHARS = 3000     # below this, try fallback (plumber/OCR)
+    MAX_PDF_PAGES_OCR = 12        # OCR can be expensive; cap pages
+    MAX_XLSX_ROWS_PER_SHEET = 2000
+    MAX_XLSX_CELLS_PER_ROW = 50
+
+    def _cap(s: str) -> str:
+        s = (s or "").strip()
+        return s[:MAX_TEXT_CHARS]
+
+    def _decode_bytes(b: bytes) -> str:
+        # Try common encodings. utf-8-sig handles BOM.
+        for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+            try:
+                return b.decode(enc)
+            except Exception:
+                continue
+        return b.decode("utf-8", errors="ignore")
+
+    def _is_probably_binary(b: bytes) -> bool:
+        # Heuristic: lots of NUL bytes suggests binary
+        return b.count(b"\x00") > 10
+
+    def _extract_pdf_pypdf(b: bytes) -> str:
         if PdfReader is None:
             return ""
         try:
-            reader = PdfReader(io.BytesIO(data))
+            reader = PdfReader(io.BytesIO(b))
             parts = []
             for page in reader.pages:
                 t = page.extract_text() or ""
+                t = t.strip()
                 if t:
                     parts.append(t)
             return "\n\n".join(parts).strip()
         except Exception:
             return ""
 
+    def _extract_pdf_pdfplumber(b: bytes) -> str:
+        if pdfplumber is None:
+            return ""
+        try:
+            parts = []
+            with pdfplumber.open(io.BytesIO(b)) as pdf:
+                for page in pdf.pages:
+                    t = page.extract_text() or ""
+                    t = t.strip()
+                    if t:
+                        parts.append(t)
+            return "\n\n".join(parts).strip()
+        except Exception:
+            return ""
+
+    def _extract_image_ocr(img_bytes: bytes) -> str:
+        if pytesseract is None or Image is None:
+            return ""
+        try:
+            img = Image.open(io.BytesIO(img_bytes))
+            # Basic OCR; keep it simple/reliable
+            txt = pytesseract.image_to_string(img)
+            return (txt or "").strip()
+        except Exception:
+            return ""
+
+    def _extract_pdf_ocr(b: bytes) -> str:
+        """
+        OCR PDF by rendering pages to images via pdftoppm (poppler-utils)
+        and running pytesseract. Uses a cap on pages.
+        """
+        if pytesseract is None or Image is None:
+            return ""
+        # If poppler isn't installed, this will fail; we catch below.
+        import tempfile
+        import subprocess
+        import os
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                pdf_path = os.path.join(td, "in.pdf")
+                with open(pdf_path, "wb") as f:
+                    f.write(b)
+
+                # Render to PNGs: page-1.png, page-2.png, ...
+                # -f 1 -l N caps pages
+                out_prefix = os.path.join(td, "page")
+                cmd = ["pdftoppm", "-png", "-f", "1", "-l", str(MAX_PDF_PAGES_OCR), pdf_path, out_prefix]
+                subprocess.run(cmd, check=True, capture_output=True)
+
+                parts = []
+                # Collect rendered pages in order
+                for i in range(1, MAX_PDF_PAGES_OCR + 1):
+                    img_path = f"{out_prefix}-{i}.png"
+                    if not os.path.exists(img_path):
+                        break
+                    with open(img_path, "rb") as imf:
+                        img_bytes = imf.read()
+                    t = _extract_image_ocr(img_bytes)
+                    if t:
+                        parts.append(f"[OCR Page {i}]\n{t}")
+                return "\n\n".join(parts).strip()
+        except Exception:
+            return ""
+
+    # -------------------------
+    # PDF
+    # -------------------------
+    if name.endswith(".pdf"):
+        # 1) pypdf
+        t1 = _extract_pdf_pypdf(data)
+        best = t1
+
+        # 2) pdfplumber fallback
+        if len(best) < PDF_MIN_TEXT_CHARS:
+            t2 = _extract_pdf_pdfplumber(data)
+            if len(t2) > len(best):
+                best = t2
+
+        # 3) OCR fallback (optional)
+        if len(best) < PDF_MIN_TEXT_CHARS:
+            t3 = _extract_pdf_ocr(data)
+            if len(t3) > len(best):
+                best = t3
+
+        return _cap(best)
+
+    # -------------------------
     # DOCX
+    # -------------------------
     if name.endswith(".docx"):
         if docx is None:
             return ""
         try:
             d = docx.Document(io.BytesIO(data))
-            parts = [p.text for p in d.paragraphs if p.text]
-            return "\n".join(parts).strip()
+            parts = []
+
+            # paragraphs
+            for p in d.paragraphs:
+                txt = (p.text or "").strip()
+                if txt:
+                    parts.append(txt)
+
+            # tables
+            for table in d.tables:
+                for row in table.rows:
+                    cells = []
+                    for cell in row.cells:
+                        ct = (cell.text or "").strip()
+                        if ct:
+                            cells.append(ct)
+                    if cells:
+                        parts.append(" | ".join(cells))
+
+            return _cap("\n".join(parts))
         except Exception:
             return ""
 
-    # Plain text-like
-    if name.endswith((".txt", ".md", ".csv", ".json", ".yaml", ".yml")):
-        try:
-            return data.decode("utf-8")
-        except Exception:
-            return data.decode("utf-8", errors="ignore")
-    # Excel file
+    # -------------------------
+    # Excel
+    # -------------------------
     if name.endswith(".xlsx"):
         if openpyxl is None:
             return ""
@@ -191,20 +340,76 @@ def _extract_text_from_upload(filename: str, data: bytes) -> str:
             parts = []
             for sheet in wb.worksheets:
                 parts.append(f"[Sheet: {sheet.title}]")
+                row_count = 0
                 for row in sheet.iter_rows(values_only=True):
-                    # join non-empty cells
-                    cells = [str(c) for c in row if c is not None and str(c).strip() != ""]
+                    if row_count >= MAX_XLSX_ROWS_PER_SHEET:
+                        parts.append("[TRUNCATED: too many rows]")
+                        break
+                    row_count += 1
+
+                    cells = []
+                    for c in row[:MAX_XLSX_CELLS_PER_ROW]:
+                        if c is None:
+                            continue
+                        s = str(c).strip()
+                        if s:
+                            cells.append(s)
                     if cells:
                         parts.append(" | ".join(cells))
-            return "\n".join(parts).strip()
+            return _cap("\n".join(parts))
         except Exception:
             return ""
 
-    # Fallback: never crash on binary
-    try:
-        return data.decode("utf-8", errors="ignore")
-    except Exception:
+    # -------------------------
+    # CSV / TSV
+    # -------------------------
+    if name.endswith((".csv", ".tsv")):
+        try:
+            text = _decode_bytes(data)
+            # Sniff delimiter (fallback to comma/tsv)
+            sample = text[:4096]
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=[",", "\t", ";", "|"])
+                delim = dialect.delimiter
+            except Exception:
+                delim = "\t" if name.endswith(".tsv") else ","
+
+            reader = csv.reader(io.StringIO(text), delimiter=delim)
+            out_lines = []
+            for i, row in enumerate(reader):
+                if i > 3000:
+                    out_lines.append("[TRUNCATED: too many rows]")
+                    break
+                # Keep rows bounded
+                row = [cell.strip() for cell in row[:60] if cell and cell.strip()]
+                if row:
+                    out_lines.append(" | ".join(row))
+            return _cap("\n".join(out_lines))
+        except Exception:
+            # Last resort decode
+            return _cap(_decode_bytes(data))
+
+    # -------------------------
+    # Plain text-like
+    # -------------------------
+    if name.endswith((".txt", ".md", ".json", ".yaml", ".yml", ".log")):
+        return _cap(_decode_bytes(data))
+
+    # -------------------------
+    # Images (OCR)
+    # -------------------------
+    if name.endswith((".png", ".jpg", ".jpeg", ".webp")):
+        t = _extract_image_ocr(data)
+        return _cap(t)
+
+    # -------------------------
+    # Fallback
+    # -------------------------
+    if _is_probably_binary(data):
+        # Don't attempt to "decode" arbitrary binaries meaningfully
         return ""
+    return _cap(_decode_bytes(data))
+
 
 # -------------------- Routes --------------------
 @app.get("/")
