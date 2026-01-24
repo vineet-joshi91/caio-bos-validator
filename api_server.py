@@ -14,6 +14,8 @@ from wallet_api import router as wallet_router
 from webhooks_razorpay import router as razorpay_webhook_router
 from routes_bos_auth import router as bos_auth_router
 
+import re
+
 try:
     from pypdf import PdfReader
 except Exception:
@@ -410,6 +412,383 @@ def _extract_text_from_upload(filename: str, data: bytes) -> str:
         return ""
     return _cap(_decode_bytes(data))
 
+def _extract_text_with_meta(filename: str, data: bytes) -> tuple[str, dict]:
+    """
+    Returns (text, meta). Meta includes:
+    - methods_tried
+    - chosen_method
+    - text_len
+    - quality_flags
+    - hints (e.g., quote-like filename but no money signals)
+    """
+
+    name = (filename or "").lower().strip()
+
+    # ---- Tuning knobs ----
+    MAX_TEXT_CHARS = 250_000
+    PDF_MIN_TEXT_CHARS = 3000
+
+    OCR_DPI = 300
+    OCR_HEAD_PAGES = 4
+    OCR_TAIL_PAGES = 4
+    OCR_MAX_TOTAL_PAGES = 12  # safety
+
+    MAX_XLSX_ROWS_PER_SHEET = 2000
+    MAX_XLSX_CELLS_PER_ROW = 50
+    MAX_CSV_ROWS = 3000
+    MAX_CSV_COLS = 60
+
+    meta = {
+        "filename": filename,
+        "ext": name.split(".")[-1] if "." in name else "",
+        "methods_tried": [],
+        "chosen_method": None,
+        "text_len": 0,
+        "quality_flags": [],
+        "hints": {},
+    }
+
+    def cap(s: str) -> str:
+        s = (s or "").strip()
+        if len(s) > MAX_TEXT_CHARS:
+            return s[:MAX_TEXT_CHARS]
+        return s
+
+    def decode_bytes(b: bytes) -> str:
+        for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+            try:
+                return b.decode(enc)
+            except Exception:
+                continue
+        return b.decode("utf-8", errors="ignore")
+
+    def is_probably_binary(b: bytes) -> bool:
+        return b.count(b"\x00") > 10
+
+    def money_signals(s: str) -> bool:
+        if not s:
+            return False
+        s2 = s.lower()
+        patterns = [
+            r"₹", r"\$", r"\binr\b", r"\busd\b", r"\brs\.?\b", r"\bgst\b", r"\btax\b",
+            r"\btotal\b", r"\bsubtotal\b", r"\bgrand total\b", r"\bamount\b",
+            r"\bquotation\b", r"\binvoice\b", r"\bpricing\b",
+            r"\b\d{1,3}(,\d{3})+(\.\d+)?\b",  # 1,23,456 style
+            r"\b\d+\.\d+\b",
+        ]
+        return any(re.search(p, s2) for p in patterns)
+
+    def quote_like_filename(n: str) -> bool:
+        return bool(re.search(r"(quote|quotation|invoice|pricing|estimate|proposal)", n.lower()))
+
+    # --- PDF extractors ---
+    def pdf_pypdf(b: bytes) -> str:
+        meta["methods_tried"].append("pdf:pypdf")
+        if PdfReader is None:
+            return ""
+        try:
+            reader = PdfReader(io.BytesIO(b))
+            parts = []
+            for page in reader.pages:
+                t = (page.extract_text() or "").strip()
+                if t:
+                    parts.append(t)
+            return "\n\n".join(parts).strip()
+        except Exception:
+            return ""
+
+    def pdf_plumber(b: bytes) -> str:
+        meta["methods_tried"].append("pdf:pdfplumber")
+        if pdfplumber is None:
+            return ""
+        try:
+            parts = []
+            with pdfplumber.open(io.BytesIO(b)) as pdf:
+                for page in pdf.pages:
+                    t = (page.extract_text() or "").strip()
+                    if t:
+                        parts.append(t)
+            return "\n\n".join(parts).strip()
+        except Exception:
+            return ""
+
+    def image_ocr(img_bytes: bytes) -> str:
+        if pytesseract is None or Image is None:
+            return ""
+        try:
+            img = Image.open(io.BytesIO(img_bytes))
+            txt = pytesseract.image_to_string(img)
+            return (txt or "").strip()
+        except Exception:
+            return ""
+
+    def pdf_ocr_first_last(b: bytes) -> str:
+        """
+        OCR first N pages and last N pages.
+        Uses pdftoppm (poppler-utils) -> PNG -> pytesseract.
+        """
+        meta["methods_tried"].append("pdf:ocr_first_last")
+        if pytesseract is None or Image is None:
+            return ""
+
+        import tempfile, subprocess, os
+
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                pdf_path = os.path.join(td, "in.pdf")
+                with open(pdf_path, "wb") as f:
+                    f.write(b)
+
+                # Determine page count (best-effort)
+                # If PdfReader exists, use it to count pages; else assume OCR_HEAD+OCR_TAIL.
+                page_count = None
+                try:
+                    if PdfReader is not None:
+                        reader = PdfReader(io.BytesIO(b))
+                        page_count = len(reader.pages)
+                except Exception:
+                    page_count = None
+
+                head_n = OCR_HEAD_PAGES
+                tail_n = OCR_TAIL_PAGES
+
+                if page_count is not None:
+                    # cap total OCR pages
+                    if head_n + tail_n > OCR_MAX_TOTAL_PAGES:
+                        head_n = min(head_n, OCR_MAX_TOTAL_PAGES)
+                        tail_n = max(0, OCR_MAX_TOTAL_PAGES - head_n)
+                    tail_start = max(1, page_count - tail_n + 1)
+                else:
+                    # unknown count: just OCR first OCR_MAX_TOTAL_PAGES pages
+                    head_n = min(head_n + tail_n, OCR_MAX_TOTAL_PAGES)
+                    tail_n = 0
+                    tail_start = None
+
+                parts = []
+
+                # OCR head pages
+                if head_n > 0:
+                    out_prefix = os.path.join(td, "head")
+                    cmd = ["pdftoppm", "-r", str(OCR_DPI), "-png", "-f", "1", "-l", str(head_n), pdf_path, out_prefix]
+                    subprocess.run(cmd, check=True, capture_output=True)
+
+                    for i in range(1, head_n + 1):
+                        img_path = f"{out_prefix}-{i}.png"
+                        if not os.path.exists(img_path):
+                            break
+                        with open(img_path, "rb") as imf:
+                            t = image_ocr(imf.read())
+                        if t:
+                            parts.append(f"[OCR Head Page {i}]\n{t}")
+
+                # OCR tail pages
+                if tail_n > 0 and tail_start is not None:
+                    out_prefix = os.path.join(td, "tail")
+                    cmd = ["pdftoppm", "-r", str(OCR_DPI), "-png", "-f", str(tail_start), "-l", str(page_count), pdf_path, out_prefix]
+                    subprocess.run(cmd, check=True, capture_output=True)
+
+                    # tail images start at 1 in output naming
+                    for i in range(1, tail_n + 1):
+                        img_path = f"{out_prefix}-{i}.png"
+                        if not os.path.exists(img_path):
+                            break
+                        with open(img_path, "rb") as imf:
+                            t = image_ocr(imf.read())
+                        if t:
+                            parts.append(f"[OCR Tail Page {tail_start + i - 1}]\n{t}")
+
+                return "\n\n".join(parts).strip()
+
+        except Exception:
+            return ""
+
+    # -------------------------
+    # PDF
+    # -------------------------
+    if name.endswith(".pdf"):
+        t1 = pdf_pypdf(data)
+        best = t1
+        best_method = "pdf:pypdf"
+
+        if len(best) < PDF_MIN_TEXT_CHARS:
+            t2 = pdf_plumber(data)
+            if len(t2) > len(best):
+                best = t2
+                best_method = "pdf:pdfplumber"
+
+        if len(best) < PDF_MIN_TEXT_CHARS:
+            t3 = pdf_ocr_first_last(data)
+            if len(t3) > len(best):
+                best = t3
+                best_method = "pdf:ocr_first_last"
+
+        best = cap(best)
+        meta["chosen_method"] = best_method
+        meta["text_len"] = len(best)
+
+        # Quality flags + UX hints (Option A + C)
+        if meta["text_len"] < PDF_MIN_TEXT_CHARS:
+            meta["quality_flags"].append("LOW_TEXT_PDF")
+
+        if quote_like_filename(filename):
+            meta["hints"]["quote_like_filename"] = True
+            if not money_signals(best):
+                meta["quality_flags"].append("LIKELY_QUOTE_PRICING_NOT_EXTRACTED")
+
+        return best, meta
+
+    # -------------------------
+    # DOCX (paragraphs + tables)
+    # -------------------------
+    if name.endswith(".docx"):
+        meta["methods_tried"].append("docx:python-docx")
+        if docx is None:
+            meta["quality_flags"].append("DOCX_PARSER_MISSING")
+            return "", meta
+        try:
+            d = docx.Document(io.BytesIO(data))
+            parts = []
+
+            for p in d.paragraphs:
+                txt = (p.text or "").strip()
+                if txt:
+                    parts.append(txt)
+
+            for table in d.tables:
+                for row in table.rows:
+                    cells = []
+                    for cell in row.cells:
+                        ct = (cell.text or "").strip()
+                        if ct:
+                            cells.append(ct)
+                    if cells:
+                        parts.append(" | ".join(cells))
+
+            out = cap("\n".join(parts))
+            meta["chosen_method"] = "docx:python-docx"
+            meta["text_len"] = len(out)
+            if meta["text_len"] < 200:
+                meta["quality_flags"].append("LOW_TEXT_DOCX")
+            return out, meta
+        except Exception:
+            meta["quality_flags"].append("DOCX_EXTRACT_FAILED")
+            return "", meta
+
+    # -------------------------
+    # XLSX
+    # -------------------------
+    if name.endswith(".xlsx"):
+        meta["methods_tried"].append("xlsx:openpyxl")
+        if openpyxl is None:
+            meta["quality_flags"].append("XLSX_PARSER_MISSING")
+            return "", meta
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+            parts = []
+            for sheet in wb.worksheets:
+                parts.append(f"[Sheet: {sheet.title}]")
+                row_count = 0
+                for row in sheet.iter_rows(values_only=True):
+                    if row_count >= MAX_XLSX_ROWS_PER_SHEET:
+                        parts.append("[TRUNCATED: too many rows]")
+                        break
+                    row_count += 1
+
+                    cells = []
+                    for c in row[:MAX_XLSX_CELLS_PER_ROW]:
+                        if c is None:
+                            continue
+                        s = str(c).strip()
+                        if s:
+                            cells.append(s)
+                    if cells:
+                        parts.append(" | ".join(cells))
+
+            out = cap("\n".join(parts))
+            meta["chosen_method"] = "xlsx:openpyxl"
+            meta["text_len"] = len(out)
+            if meta["text_len"] < 200:
+                meta["quality_flags"].append("LOW_TEXT_XLSX")
+            return out, meta
+        except Exception:
+            meta["quality_flags"].append("XLSX_EXTRACT_FAILED")
+            return "", meta
+
+    # -------------------------
+    # CSV / TSV
+    # -------------------------
+    if name.endswith((".csv", ".tsv")):
+        meta["methods_tried"].append("csv:sniff")
+        try:
+            text = decode_bytes(data)
+            sample = text[:4096]
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=[",", "\t", ";", "|"])
+                delim = dialect.delimiter
+            except Exception:
+                delim = "\t" if name.endswith(".tsv") else ","
+
+            rdr = csv.reader(io.StringIO(text), delimiter=delim)
+            out_lines = []
+            for i, row in enumerate(rdr):
+                if i >= MAX_CSV_ROWS:
+                    out_lines.append("[TRUNCATED: too many rows]")
+                    break
+                row = [(c or "").strip() for c in row[:MAX_CSV_COLS]]
+                row = [c for c in row if c]
+                if row:
+                    out_lines.append(" | ".join(row))
+
+            out = cap("\n".join(out_lines))
+            meta["chosen_method"] = f"csv:{'tsv' if delim=='\\t' else 'delim'}"
+            meta["text_len"] = len(out)
+            if meta["text_len"] < 200:
+                meta["quality_flags"].append("LOW_TEXT_CSV")
+            return out, meta
+        except Exception:
+            out = cap(decode_bytes(data))
+            meta["chosen_method"] = "csv:decode_fallback"
+            meta["text_len"] = len(out)
+            return out, meta
+
+    # -------------------------
+    # Plain text-like
+    # -------------------------
+    if name.endswith((".txt", ".md", ".json", ".yaml", ".yml", ".log")):
+        meta["methods_tried"].append("text:decode")
+        out = cap(decode_bytes(data))
+        meta["chosen_method"] = "text:decode"
+        meta["text_len"] = len(out)
+        return out, meta
+
+    # -------------------------
+    # Images (OCR)
+    # -------------------------
+    if name.endswith((".png", ".jpg", ".jpeg", ".webp")):
+        meta["methods_tried"].append("img:ocr")
+        out = cap(image_ocr(data))
+        meta["chosen_method"] = "img:ocr"
+        meta["text_len"] = len(out)
+        if meta["text_len"] < 50:
+            meta["quality_flags"].append("LOW_TEXT_IMAGE_OCR")
+        return out, meta
+
+    # -------------------------
+    # Fallback
+    # -------------------------
+    if is_probably_binary(data):
+        meta["methods_tried"].append("fallback:binary")
+        meta["chosen_method"] = "fallback:binary"
+        meta["text_len"] = 0
+        meta["quality_flags"].append("BINARY_UNSUPPORTED")
+        return "", meta
+
+    meta["methods_tried"].append("fallback:decode")
+    out = cap(decode_bytes(data))
+    meta["chosen_method"] = "fallback:decode"
+    meta["text_len"] = len(out)
+    return out, meta
+
 
 # -------------------- Routes --------------------
 @app.get("/")
@@ -533,13 +912,15 @@ async def upload_and_ea(
         return {"ui": out.get("ui") or out}
 
     # Document path (PDF/DOCX/TXT/other)
-    text = _extract_text_from_upload(filename, raw)
+    text, extract_meta = _extract_text_with_meta(filename, raw)
     
     print(
     f"[UPLOAD] filename={filename} "
     f"len={len(text)} "
     f"preview={text[:200]!r}"
 )
+
+    print(f"[EXTRACT] chosen={extract_meta.get('chosen_method')} flags={extract_meta.get('quality_flags')}")
 
     if not text or len(text.strip()) < 20:
         return {
@@ -577,6 +958,34 @@ async def upload_and_ea(
         timeout_sec=timeout_sec,
         num_predict=num_predict,
     )
+    
+    # Attach extraction metadata
+    packet["meta"]["extract"] = extract_meta
+    
+    # Build warnings for UI
+    warnings = []
+    flags = extract_meta.get("quality_flags") or []
+    if "LIKELY_QUOTE_PRICING_NOT_EXTRACTED" in flags:
+        warnings.append(
+            "Pricing/quotation terms may be embedded as an image/table and were not extracted reliably. "
+            "Upload the quotation as XLSX/CSV or a text-based PDF, or upload the quotation pages separately."
+        )
+    elif "LOW_TEXT_PDF" in flags:
+        warnings.append(
+            "This PDF contains limited extractable text (possibly scanned or table-heavy). "
+            "Results may be incomplete; consider uploading a text-based PDF or an XLSX/CSV version."
+        )
+    
+    packet["meta"]["warnings"] = warnings
+    
     if "error" in out and "ui" not in out:
         return {"ui": out}
-    return {"ui": out.get("ui") or out}
+    ui_obj = out.get("ui") or out
+    if isinstance(ui_obj, dict):
+        ui_obj.setdefault("warnings", [])
+        ui_obj["warnings"].extend(packet["meta"].get("warnings", []))
+        ui_obj["extract_meta"] = extract_meta
+    return {"ui": ui_obj}
+
+    
+    
