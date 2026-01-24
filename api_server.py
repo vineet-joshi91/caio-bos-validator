@@ -740,7 +740,7 @@ def _extract_text_with_meta(filename: str, data: bytes) -> tuple[str, dict]:
                     out_lines.append(" | ".join(row))
 
             out = cap("\n".join(out_lines))
-            meta["chosen_method"] = f"csv:{'tsv' if delim=='\\t' else 'delim'}"
+            meta["chosen_method"] = "csv:tsv" if delim == "\t" else "csv:delim"
             meta["text_len"] = len(out)
             if meta["text_len"] < 200:
                 meta["quality_flags"].append("LOW_TEXT_CSV")
