@@ -1,53 +1,190 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import json
-from typing import Dict, Any, List
 
+import json
 import re
+from typing import Dict, Any, List, Tuple, Optional
 
 from slm.core.slm_core import OllamaRunner, PROMPT_SYSTEM
-from slm.core.ea_core import build_ea_prompt, build_ea_doc_prompt, coerce_ea_json, ea_output_to_dict
+from slm.core.ea_core import (
+    build_ea_prompt,
+    build_ea_doc_prompt,
+    coerce_ea_json,
+    ea_output_to_dict,
+)
+
+# =============================================================================
+# EA schema expectations & validators
+# =============================================================================
+
+REQUIRED_EA_KEYS = {
+    "executive_summary",
+    "top_priorities",
+    "key_risks",
+    "cross_brain_actions_7d",
+    "cross_brain_actions_30d",
+    "owner_matrix",
+    "confidence",
+}
+
+REQUIRED_ROLES = ["CFO", "CMO", "COO", "CHRO", "CPO"]
+
+
+def _ea_schema_template() -> Dict[str, Any]:
+    """
+    Minimal schema template used for repair prompts.
+    (We keep this small to reduce burden on small models.)
+    """
+    return {
+        "executive_summary": "string",
+        "top_priorities": ["string", "string", "string"],
+        "key_risks": ["string", "string"],
+        "cross_brain_actions_7d": [
+            "CFO: ...",
+            "CMO: ...",
+            "COO: ...",
+            "CHRO: ...",
+            "CPO: ...",
+        ],
+        "cross_brain_actions_30d": [
+            "CFO: ...",
+            "CMO: ...",
+            "COO: ...",
+            "CHRO: ...",
+            "CPO: ...",
+        ],
+        "owner_matrix": {
+            "CFO": ["action"],
+            "CMO": ["action"],
+            "COO": ["action"],
+            "CHRO": ["action"],
+            "CPO": ["action"],
+        },
+        "confidence": 0.7,
+    }
+
+
+def _try_parse_json(s: Any) -> Dict[str, Any]:
+    if not isinstance(s, str) or not s.strip():
+        return {}
+    try:
+        j = json.loads(s)
+        return j if isinstance(j, dict) else {}
+    except Exception:
+        return {}
+
 
 def _is_empty_ea_obj(d: Dict[str, Any]) -> bool:
+    """
+    True if "basically empty": no summary and all major lists empty.
+    """
     if not isinstance(d, dict):
         return True
+
     if (d.get("executive_summary") or "").strip():
         return False
+
     for k in ["top_priorities", "key_risks", "cross_brain_actions_7d", "cross_brain_actions_30d"]:
         v = d.get(k)
         if isinstance(v, list) and len(v) > 0:
             return False
+
     om = d.get("owner_matrix")
     if isinstance(om, dict) and any(isinstance(v, list) and v for v in om.values()):
         return False
+
     return True
 
 
+def _is_valid_ea_schema(obj: Dict[str, Any]) -> bool:
+    """
+    Strict-enough schema validation to prevent "placeholder" and empty matrices.
+    """
+    if not isinstance(obj, dict):
+        return False
+
+    if not REQUIRED_EA_KEYS.issubset(set(obj.keys())):
+        return False
+
+    if not isinstance(obj.get("executive_summary"), str) or not obj["executive_summary"].strip():
+        return False
+
+    tp = obj.get("top_priorities")
+    if not isinstance(tp, list) or len(tp) < 3:
+        return False
+
+    kr = obj.get("key_risks")
+    if not isinstance(kr, list) or len(kr) < 2:
+        return False
+
+    a7 = obj.get("cross_brain_actions_7d")
+    if not isinstance(a7, list) or len(a7) < 5:
+        return False
+
+    a30 = obj.get("cross_brain_actions_30d")
+    if not isinstance(a30, list) or len(a30) < 5:
+        return False
+
+    om = obj.get("owner_matrix")
+    if not isinstance(om, dict):
+        return False
+
+    for role in REQUIRED_ROLES:
+        v = om.get(role)
+        if not isinstance(v, list) or len(v) < 1:
+            return False
+
+    # confidence should be numeric-ish
+    try:
+        float(obj.get("confidence", 0.0))
+    except Exception:
+        return False
+
+    return True
+
+
+def _needs_repair(obj: Dict[str, Any]) -> bool:
+    """
+    Repair if empty OR schema-invalid.
+    """
+    return _is_empty_ea_obj(obj) or (not _is_valid_ea_schema(obj))
+
+
+# =============================================================================
+# Fallbacks (deterministic + generic)
+# =============================================================================
+
 def _fallback_nonempty_ea() -> Dict[str, Any]:
+    """
+    Safe generic fallback (used mainly in fusion mode if we have no doc text).
+    """
     return {
-        "executive_summary": "The model returned an empty plan. This is a safe fallback. Re-run after strengthening evidence extraction or prompts.",
+        "executive_summary": (
+            "The model returned an empty or invalid plan. This is a safe fallback. "
+            "Re-run after strengthening evidence extraction or increasing model capacity."
+        ),
         "top_priorities": [
-            "Extract key facts (pricing, deliverables, timelines) from the document",
+            "Extract key facts (pricing, deliverables, timelines) from the input",
             "Define success KPIs and reporting cadence",
             "Assign owners and dependencies",
         ],
         "key_risks": [
-            "Empty model output (Evidence: model returned blank fields)",
-            "Insufficient evidence in excerpt (Evidence: missing or unclear document details)",
+            "Empty/invalid model output (Evidence: schema validation failure)",
+            "Insufficient evidence in provided inputs (Evidence: missing or unclear details)",
         ],
         "cross_brain_actions_7d": [
-            "CFO: Confirm commercial terms and budget ceiling (Evidence: document terms)",
+            "CFO: Confirm commercial terms and budget ceiling (Evidence: provided inputs)",
             "CMO: Convert deliverables into a 30-day content calendar (Evidence: listed deliverables)",
             "COO: Define workflow + approvals + cadence (Evidence: execution requirement)",
             "CHRO: Assign roles/owners and capacity plan (Evidence: resourcing implied)",
-            "CPO: Vendor/SLA checklist for external deliverables (Evidence: quotation/proposal)",
+            "CPO: Vendor/SLA checklist for external deliverables (Evidence: proposal context)",
         ],
         "cross_brain_actions_30d": [
-            "CFO: Define ROI model and tracking (Evidence: revenue/lead outcomes)",
-            "CMO: Launch content pipeline and measure engagement baseline (Evidence: content scope)",
+            "CFO: Define ROI model and tracking (Evidence: expected outcomes)",
+            "CMO: Launch content pipeline and measure engagement baseline (Evidence: scope)",
             "COO: Implement weekly execution review (Evidence: timeline requirement)",
-            "CHRO: Define accountability + incentives (Evidence: execution governance)",
-            "CPO: Finalize vendor milestones and acceptance criteria (Evidence: quotation scope)",
+            "CHRO: Define accountability + incentives (Evidence: governance)",
+            "CPO: Finalize vendor milestones and acceptance criteria (Evidence: deliverables)",
         ],
         "owner_matrix": {
             "CFO": ["Confirm terms + ROI model"],
@@ -59,13 +196,11 @@ def _fallback_nonempty_ea() -> Dict[str, Any]:
         "confidence": 0.4,
         "tools": {"charts": []},
     }
-    
+
 
 def _normalize_per_brain(per_brain: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """
-    Make sure each brain payload is a plain dict with
-    keys: plan, recommendation, confidence.
-    Accepts either dicts or simple objects with attributes.
+    Ensure each brain payload is a dict with keys: plan, recommendation, confidence.
     """
     out: Dict[str, Dict[str, Any]] = {}
     for k, v in (per_brain or {}).items():
@@ -76,7 +211,6 @@ def _normalize_per_brain(per_brain: Dict[str, Any]) -> Dict[str, Dict[str, Any]]
                 "confidence": float(v.get("confidence", 0.7)),
             }
         else:
-            # object-like fallback
             out[k] = {
                 "plan": getattr(v, "plan", {}) or {},
                 "recommendation": getattr(v, "recommendation", {}) or {},
@@ -85,11 +219,11 @@ def _normalize_per_brain(per_brain: Dict[str, Any]) -> Dict[str, Dict[str, Any]]
     return out
 
 
-# ---------------------------------------------------------------------
-# EA-LEVEL VISUALS: BUDGET VS ACTUAL (BY BRAIN) + REVENUE VS PROFIT
-# ---------------------------------------------------------------------
-def _safe_float(value: Any) -> float | None:
-    """Best-effort numeric conversion; returns None if not possible."""
+# =============================================================================
+# Charts helpers (kept from your file; minimal edits for safety)
+# =============================================================================
+
+def _safe_float(value: Any) -> Optional[float]:
     if value is None:
         return None
     try:
@@ -98,64 +232,30 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
-def _guess_brain_actual_total(brain: str, pkt: Dict[str, Any]) -> float | None:
-    """
-    Try to infer an 'actual spend' or 'actual cost' for a given brain
-    from the packet. This is intentionally conservative: if we don't
-    find anything obvious, we return None and skip that row.
-
-    You can tighten this later once your ETL consistently populates
-    <brain>_metrics with specific keys.
-    """
+def _guess_brain_actual_total(brain: str, pkt: Dict[str, Any]) -> Optional[float]:
     metrics = pkt.get(f"{brain}_metrics") or {}
 
-    # CFO: try to pick up overall expenses from CFO metrics / finance snapshot
     if brain == "cfo":
-        val = (
-            metrics.get("total_expenses")
-            or metrics.get("total_costs")
-            or metrics.get("opex_total")
-        )
+        val = metrics.get("total_expenses") or metrics.get("total_costs") or metrics.get("opex_total")
         if val is not None:
             return _safe_float(val)
 
-        # fallback to a P&L snapshot if present
         finance = pkt.get("pnl_snapshot") or pkt.get("finance") or {}
-        val = (
-            finance.get("total_expenses")
-            or finance.get("operating_expenses")
-            or finance.get("total_costs")
-        )
+        val = finance.get("total_expenses") or finance.get("operating_expenses") or finance.get("total_costs")
         return _safe_float(val)
 
-    # CMO: marketing spend
     if brain == "cmo":
-        val = (
-            metrics.get("marketing_spend_total")
-            or metrics.get("spend_total")
-            or metrics.get("ad_spend_total")
-        )
+        val = metrics.get("marketing_spend_total") or metrics.get("spend_total") or metrics.get("ad_spend_total")
         return _safe_float(val)
 
-    # CHRO: internal HR spend
     if brain == "chro":
-        val = (
-            metrics.get("hr_total_spend")
-            or metrics.get("people_costs_total")
-            or metrics.get("spend_total")
-        )
+        val = metrics.get("hr_total_spend") or metrics.get("people_costs_total") or metrics.get("spend_total")
         return _safe_float(val)
 
-    # COO: operating spend (non-people, non-marketing)
     if brain == "coo":
-        val = (
-            metrics.get("operating_cost_total")
-            or metrics.get("ops_spend_total")
-            or metrics.get("spend_total")
-        )
+        val = metrics.get("operating_cost_total") or metrics.get("ops_spend_total") or metrics.get("spend_total")
         return _safe_float(val)
 
-    # CPO (Chief People Officer): external talent cost
     if brain == "cpo":
         val = (
             metrics.get("external_talent_cost_total")
@@ -165,61 +265,35 @@ def _guess_brain_actual_total(brain: str, pkt: Dict[str, Any]) -> float | None:
         )
         return _safe_float(val)
 
-    # Generic fallback
     val = metrics.get("spend_total") or metrics.get("total_cost")
     return _safe_float(val)
 
 
 def _build_ea_charts(pkt: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    Build EA-level charts:
-
-    1) Budget vs Actual by function (brain) using:
-        pkt["budgets"][<brain>]["total_annual"] as budget
-        and inferred actuals from <brain>_metrics or finance snapshot.
-
-    2) Revenue vs Profit (if finance / P&L snapshot exists).
-    """
     charts: List[Dict[str, Any]] = []
-
     budgets = pkt.get("budgets") or {}
 
-    # ----------------------------------------
-    # 1) Budget vs Actual by Brain / Function
-    # ----------------------------------------
     grouped_rows: List[Dict[str, Any]] = []
     delta_rows: List[Dict[str, Any]] = []
 
     for brain, bdata in budgets.items():
         if not isinstance(bdata, dict):
             continue
-        budget_total = _safe_float(
-            bdata.get("total_annual") or bdata.get("total") or bdata.get("budget")
-        )
+        budget_total = _safe_float(bdata.get("total_annual") or bdata.get("total") or bdata.get("budget"))
         actual_total = _guess_brain_actual_total(brain, pkt)
 
-        # Skip completely empty entries
         if budget_total is None and actual_total is None:
             continue
 
-        label = brain.upper()
+        label = str(brain).upper()
 
         if budget_total is not None:
-            grouped_rows.append(
-                {"brain": label, "kind": "Budget", "value": budget_total}
-            )
+            grouped_rows.append({"brain": label, "kind": "Budget", "value": budget_total})
         if actual_total is not None:
-            grouped_rows.append(
-                {"brain": label, "kind": "Actual", "value": actual_total}
-            )
+            grouped_rows.append({"brain": label, "kind": "Actual", "value": actual_total})
 
         if budget_total is not None and actual_total is not None:
-            delta_rows.append(
-                {
-                    "brain": label,
-                    "delta": actual_total - budget_total,
-                }
-            )
+            delta_rows.append({"brain": label, "delta": actual_total - budget_total})
 
     if grouped_rows:
         charts.append(
@@ -230,7 +304,6 @@ def _build_ea_charts(pkt: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "title": "Budget vs Actual by Function",
                 "x": {"field": "brain", "label": "Function"},
                 "y": {"field": "value", "label": "Amount", "unit": "currency"},
-                # Allows frontend to group Budget/Actual bars per function
                 "series_field": "kind",
                 "data": grouped_rows,
             }
@@ -249,20 +322,9 @@ def _build_ea_charts(pkt: Dict[str, Any]) -> List[Dict[str, Any]]:
             }
         )
 
-    # ----------------------------------------
-    # 2) Revenue vs Profit (Finance Summary)
-    # ----------------------------------------
     finance = pkt.get("pnl_snapshot") or pkt.get("finance") or {}
-    rev = _safe_float(
-        finance.get("revenue_total")
-        or finance.get("total_revenue")
-        or finance.get("revenue")
-    )
-    profit = _safe_float(
-        finance.get("net_profit")
-        or finance.get("profit_after_tax")
-        or finance.get("ebitda")
-    )
+    rev = _safe_float(finance.get("revenue_total") or finance.get("total_revenue") or finance.get("revenue"))
+    profit = _safe_float(finance.get("net_profit") or finance.get("profit_after_tax") or finance.get("ebitda"))
 
     rev_profit_rows: List[Dict[str, Any]] = []
     if rev is not None:
@@ -286,48 +348,29 @@ def _build_ea_charts(pkt: Dict[str, Any]) -> List[Dict[str, Any]]:
     return charts
 
 
+# =============================================================================
+# Deterministic doc fallback (used if model fails schema even after repair)
+# =============================================================================
 
 def _extract_facts_from_doc(text: str) -> Dict[str, Any]:
-    import re
-
     t = text or ""
 
-    # --- Normalize common PDF extraction artifacts ---
-    # remove zero-width chars, normalize weird spaces, collapse whitespace
+    # normalize common artifacts
     t = re.sub(r"[\u200b-\u200f\u202a-\u202e\u2060]", "", t)
-    t = t.replace("\u00a0", " ")  # NBSP -> space
-    t = t.replace("ﬁ", "fi")      # ligature fixes sometimes appear in PDFs
+    t = t.replace("\u00a0", " ")
+    t = t.replace("ﬁ", "fi")
     t = re.sub(r"[ \t]+", " ", t)
     t = re.sub(r"\n{3,}", "\n\n", t).strip()
 
-    # take first few meaningful lines as context bullets
     lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
     sample_lines = lines[:12]
 
-    # --- money + percentages + dates ---
-    money: list[str] = []
-
-    # ₹ amounts (allow optional commas and optional decimals)
+    money: List[str] = []
     money += re.findall(r"(₹\s*\d[\d,]*(?:\.\d+)?)", t)
-
-    # Rs / INR formats
     money += re.findall(r"((?:Rs\.?|INR)\s*\d[\d,]*(?:\.\d+)?)", t, flags=re.IGNORECASE)
+    money += re.findall(r"(\d[\d,]{2,})\s*(?:per\s*month|/month|monthly|pm)", t, flags=re.IGNORECASE)
+    money += re.findall(r"(\d[\d,]{2,})\s*(?:\n|\s)*per\s*(?:\n|\s)*month", t, flags=re.IGNORECASE)
 
-    # numbers that look like prices near monthly terms (allow whitespace/newlines between)
-    money += re.findall(
-        r"(\d[\d,]{2,})\s*(?:per\s*month|/month|monthly|pm)",
-        t,
-        flags=re.IGNORECASE,
-    )
-
-    # monthly terms split across newlines: "130,000\nper\nmonth"
-    money += re.findall(
-        r"(\d[\d,]{2,})\s*(?:\n|\s)*per\s*(?:\n|\s)*month",
-        t,
-        flags=re.IGNORECASE,
-    )
-
-    # normalize / dedupe money
     money = [m.strip() for m in money if str(m).strip()]
     money = list(dict.fromkeys(money))[:8]
 
@@ -338,14 +381,13 @@ def _extract_facts_from_doc(text: str) -> Dict[str, Any]:
     dates = re.findall(r"\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b", t)
     dates = list(dict.fromkeys(dates))[:8]
 
-    # --- deliverables / channels ---
     deliverable_phrases = [
         "podcast", "vodcast", "masterclass", "reels", "shorts",
         "long-form", "long form", "youtube", "instagram", "linkedin",
         "case study", "webinar", "newsletter",
         "short video", "long video", "content calendar", "content strategy",
     ]
-    deliverable_hits: list[str] = []
+    deliverable_hits: List[str] = []
     for kw in deliverable_phrases:
         if re.search(rf"\b{re.escape(kw)}\b", t, flags=re.IGNORECASE):
             deliverable_hits.append(kw)
@@ -359,48 +401,6 @@ def _extract_facts_from_doc(text: str) -> Dict[str, Any]:
         "sample_lines": sample_lines,
     }
 
-REQUIRED_EA_KEYS = {
-    "executive_summary",
-    "top_priorities",
-    "key_risks",
-    "cross_brain_actions_7d",
-    "cross_brain_actions_30d",
-    "owner_matrix",
-    "confidence"
-}
-
-def _is_valid_ea_schema(obj: dict) -> bool:
-    if not isinstance(obj, dict):
-        return False
-
-    if not REQUIRED_EA_KEYS.issubset(obj.keys()):
-        return False
-
-    if not obj.get("executive_summary"):
-        return False
-
-    if not isinstance(obj.get("top_priorities"), list) or len(obj["top_priorities"]) < 3:
-        return False
-
-    if not isinstance(obj.get("key_risks"), list) or len(obj["key_risks"]) < 2:
-        return False
-
-    if not isinstance(obj.get("cross_brain_actions_7d"), list):
-        return False
-
-    if not isinstance(obj.get("cross_brain_actions_30d"), list):
-        return False
-
-    owner_matrix = obj.get("owner_matrix")
-    if not isinstance(owner_matrix, dict):
-        return False
-
-    for role in ["CFO", "CMO", "COO", "CHRO", "CPO"]:
-        if role not in owner_matrix or not owner_matrix[role]:
-            return False
-
-    return True
-
 
 def _fallback_from_doc(doc_text: str) -> Dict[str, Any]:
     facts = _extract_facts_from_doc(doc_text)
@@ -413,9 +413,8 @@ def _fallback_from_doc(doc_text: str) -> Dict[str, Any]:
     evidence = f"Evidence: {money}; {perc}; deliverables: {dels}; date: {date}. Preview: {preview}"
 
     return {
-        
         "executive_summary": (
-            f"Document-first plan generated via deterministic extraction because the model returned an empty schema. "
+            "Document-first plan generated via deterministic extraction because the model returned empty/invalid JSON. "
             f"This proposal centers on organic content-led growth with defined deliverables and commercial terms. ({evidence})"
         ),
         "top_priorities": [
@@ -455,6 +454,34 @@ def _fallback_from_doc(doc_text: str) -> Dict[str, Any]:
     }
 
 
+# =============================================================================
+# Repair prompts
+# =============================================================================
+
+def _build_repair_prompt(base_prompt: str, broken_output: str) -> str:
+    """
+    Strong repair prompt: show schema + broken output; demand ONLY JSON.
+    """
+    schema = _ea_schema_template()
+    return (
+        base_prompt
+        + "\n\n=== JSON REPAIR MODE ===\n"
+          "Your previous output was EMPTY or INVALID JSON, or failed schema checks.\n"
+          "Return ONLY valid JSON. No markdown. No commentary.\n"
+          "Must include ALL keys in REQUIRED SCHEMA.\n"
+          "owner_matrix MUST contain CFO/CMO/COO/CHRO/CPO each with 1–3 actions.\n"
+          "If evidence is missing, write 'Insufficient evidence: <what>' instead of leaving fields empty.\n\n"
+          "REQUIRED SCHEMA TEMPLATE:\n"
+        + "```json\n" + json.dumps(schema, ensure_ascii=False, indent=2) + "\n```\n\n"
+          "BROKEN OUTPUT:\n"
+        + "```text\n" + (broken_output or "")[:6000] + "\n```\n"
+    )
+
+
+# =============================================================================
+# Main entrypoint
+# =============================================================================
+
 def run(
     pkt: Dict[str, Any],
     host: str,
@@ -468,37 +495,21 @@ def run(
 ) -> Dict[str, Any]:
     """
     Executive Assistant (EA) fan-in stage.
-    - Builds an EA prompt from validator packet + per-brain SLM outputs.
-    - Calls Ollama via the shared runner.
-    - Coerces the model text into a strict JSON shape for the UI.
-    - Attaches EA-level visual specs under out["tools"]["charts"]:
 
-        * ea-budget-vs-actual-by-brain
-        * ea-spend-delta-by-brain
-        * ea-revenue-vs-profit
-
-      (Charts are only added if relevant data is present.)
-    Returns a dict ready to print/dump as JSON.
+    Key behaviors:
+    - doc mode if pkt has document_text/text
+    - fusion mode otherwise
+    - 2-pass generation: initial -> repair (if empty/invalid) -> deterministic fallback
+    - Always attaches _meta and charts
     """
     per_brain_norm = _normalize_per_brain(per_brain)
 
-    # Decide EA mode:
-    # - If document_text exists (Upload & Analyze), always use document-first EA prompt.
-    # - Otherwise (true validator flow), use fusion prompt.
     doc_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
     doc_text_len = len(doc_text)
     mode = "doc" if doc_text_len > 0 else "fusion"
 
-    if mode == "doc":
-        prompt = build_ea_doc_prompt(pkt)
-    else:
-        prompt = build_ea_prompt(pkt, per_brain_norm)
+    prompt = build_ea_doc_prompt(pkt) if mode == "doc" else build_ea_prompt(pkt, per_brain_norm)
 
-
-
-
-
-    # 3) Call Ollama
     runner = OllamaRunner(
         model=model,
         host=host,
@@ -508,36 +519,13 @@ def run(
         top_p=top_p,
         repeat_penalty=repeat_penalty,
     )
-    raw = runner.infer(prompt=prompt, system=PROMPT_SYSTEM)
 
-    # Try to parse the JSON directly first (before coerce)
-    def _try_parse_json(s: str) -> Dict[str, Any]:
-        if not isinstance(s, str) or not s.strip():
-            return {}
-        try:
-            j = json.loads(s)
-            return j if isinstance(j, dict) else {}
-        except Exception:
-            return {}
-    
+    raw = runner.infer(prompt=prompt, system=PROMPT_SYSTEM)
     parsed = _try_parse_json(raw)
-    
-    def _needs_repair(obj: Dict[str, Any]) -> bool:
-        return _is_empty_ea_obj(obj) or (not _is_valid_ea_schema(obj))
-    
-    # 1) If empty OR invalid, do a repair-oriented retry once
+
+    # Pass 2: repair if needed (empty or invalid)
     if _needs_repair(parsed):
-        repair_prompt = (
-            prompt
-            + "\n\nIMPORTANT:\n"
-              "- Your previous output was EMPTY or INVALID JSON.\n"
-              "- Return ONLY valid JSON.\n"
-              "- Include ALL required keys: executive_summary, top_priorities, key_risks, "
-              "cross_brain_actions_7d, cross_brain_actions_30d, owner_matrix, confidence.\n"
-              "- owner_matrix MUST include CFO/CMO/COO/CHRO/CPO each with 1–3 actions.\n"
-              "- If evidence is missing, write 'Insufficient evidence: <what>' instead of leaving fields empty.\n"
-        )
-    
+        repair_prompt = _build_repair_prompt(prompt, raw if isinstance(raw, str) else "")
         runner2 = OllamaRunner(
             model=model,
             host=host,
@@ -549,35 +537,33 @@ def run(
         )
         raw2 = runner2.infer(prompt=repair_prompt, system=PROMPT_SYSTEM)
         parsed2 = _try_parse_json(raw2)
-    
-        # Accept retry if it’s now valid
+
         if not _needs_repair(parsed2):
             raw = raw2
             parsed = parsed2
-    
-    # 2) If still invalid after retry, fall back deterministically (doc mode only)
+
+    # Final decision
     if _needs_repair(parsed):
-        out = _fallback_from_doc(doc_text)
+        if mode == "doc" and doc_text_len > 0:
+            out = _fallback_from_doc(doc_text)
+        else:
+            out = _fallback_nonempty_ea()
     else:
-        # Prefer parsed JSON directly; only coerce if needed
-        out = parsed
-        out = ea_output_to_dict(out) if isinstance(out, dict) else ea_output_to_dict(coerce_ea_json(raw))
+        # Prefer parsed dict directly (avoid losing content through coercion)
+        out = ea_output_to_dict(parsed)
 
-
-
-    # 5) Attach meta for traceability
+    # Attach meta for traceability (generated in code, not demanded from model)
     out["_meta"] = {
         "engine": "ollama",
         "model": model,
-        "bytes_in": len(prompt),
+        "bytes_in": len(prompt) if isinstance(prompt, str) else 0,
         "bytes_out": len(raw) if isinstance(raw, str) else 0,
         "confidence": out.get("confidence", 0.8),
         "mode": mode,
         "doc_text_len": doc_text_len,
     }
 
-
-    # 6) Attach EA-level charts (budget umbrella + profit comparison)
+    # Attach EA-level charts
     tools: Dict[str, Any] = out.setdefault("tools", {})
     charts = tools.setdefault("charts", [])
 
