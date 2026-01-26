@@ -73,15 +73,46 @@ def _ea_schema_template() -> Dict[str, Any]:
         "confidence": 0.7,
     }
 
+def _extract_first_json_object(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    start = text.find("{")
+    if start == -1:
+        return ""
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        else:
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : i + 1].strip()
+    return ""
+
 
 def _try_parse_json(s: Any) -> Dict[str, Any]:
     if not isinstance(s, str) or not s.strip():
         return {}
+    candidate = _extract_first_json_object(s) or s
     try:
-        j = json.loads(s)
+        j = json.loads(candidate)
         return j if isinstance(j, dict) else {}
     except Exception:
         return {}
+
 
 
 def _is_empty_ea_obj(d: Dict[str, Any]) -> bool:
@@ -528,6 +559,21 @@ def run(
 
     prompt = build_ea_doc_prompt(pkt) if mode == "doc" else build_ea_prompt(pkt, per_brain_norm)
 
+    def _parse_model_output(s: Any) -> Dict[str, Any]:
+        """
+        Robust parse: try extracted JSON block first, then raw.
+        """
+        if not isinstance(s, str) or not s.strip():
+            return {}
+        block = _extract_json_block(s)
+        parsed_obj = _try_parse_json(block) if block else {}
+        if parsed_obj:
+            return parsed_obj
+        return _try_parse_json(s)
+
+    # -----------------------------
+    # Pass 1: Primary generation
+    # -----------------------------
     runner = OllamaRunner(
         model=model,
         host=host,
@@ -538,45 +584,75 @@ def run(
         repeat_penalty=repeat_penalty,
     )
 
-    raw = runner.infer(prompt=prompt, system=EA_SYSTEM)
-    parsed = _try_parse_json(_extract_json_block(raw) or raw)
+    raw1 = runner.infer(prompt=prompt, system=EA_SYSTEM)
+    parsed1 = _parse_model_output(raw1)
 
-    # Pass 2: repair if needed (empty or invalid)
-    if _needs_repair(parsed):
-        repair_prompt = _build_repair_prompt(prompt, raw if isinstance(raw, str) else "")
+    # Keep these variables so we can debug later
+    raw2 = ""
+    parsed2: Dict[str, Any] = {}
+
+    # -----------------------------
+    # Pass 2: Repair if needed
+    # -----------------------------
+    parsed = parsed1
+    raw = raw1
+
+    if _needs_repair(parsed1):
+        repair_prompt = _build_repair_prompt(prompt, raw1 if isinstance(raw1, str) else "")
+
         runner2 = OllamaRunner(
             model=model,
             host=host,
             timeout_sec=timeout_sec,
             num_predict=num_predict,
-            temperature=0.0,
+            temperature=0.0,   # stricter
             top_p=top_p,
             repeat_penalty=repeat_penalty,
         )
         raw2 = runner2.infer(prompt=repair_prompt, system=EA_SYSTEM)
-        parsed2 = _try_parse_json(_extract_json_block(raw2) or raw2)
+        parsed2 = _parse_model_output(raw2)
 
         if not _needs_repair(parsed2):
             raw = raw2
             parsed = parsed2
 
-    # Final decision
+    # -----------------------------
+    # Final decision + DEBUG
+    # -----------------------------
     if _needs_repair(parsed):
+        # Debug prints ONLY when we end up falling back
+        try:
+            print("[EA_DEBUG] Fallback triggered (still empty/invalid after repair).")
+            if isinstance(raw1, str):
+                print("[EA_DEBUG] raw1_head:", raw1[:400].replace("\n", "\\n"))
+                print("[EA_DEBUG] raw1_tail:", raw1[-400:].replace("\n", "\\n"))
+            if isinstance(raw2, str) and raw2:
+                print("[EA_DEBUG] raw2_head:", raw2[:400].replace("\n", "\\n"))
+                print("[EA_DEBUG] raw2_tail:", raw2[-400:].replace("\n", "\\n"))
+        except Exception:
+            # Never break the pipeline due to debug
+            pass
+
         if mode == "doc" and doc_text_len > 0:
             out = _fallback_from_doc(doc_text)
         else:
             out = _fallback_nonempty_ea()
     else:
         out = parsed
-    
+
         # Ensure tools/charts exists for downstream consumers (charts + UI)
         if isinstance(out, dict):
             out.setdefault("tools", {"charts": []})
             if isinstance(out["tools"], dict):
                 out["tools"].setdefault("charts", [])
 
+    # -----------------------------
+    # Attach meta (always)
+    # -----------------------------
+    if not isinstance(out, dict):
+        # safety: never return non-dict
+        out = _fallback_nonempty_ea()
 
-    # Attach meta for traceability (generated in code, not demanded from model)
     out["_meta"] = {
         "engine": "ollama",
         "model": model,
@@ -587,9 +663,18 @@ def run(
         "doc_text_len": doc_text_len,
     }
 
+    # -----------------------------
     # Attach EA-level charts
+    # -----------------------------
     tools: Dict[str, Any] = out.setdefault("tools", {})
+    if not isinstance(tools, dict):
+        tools = {}
+        out["tools"] = tools
+
     charts = tools.setdefault("charts", [])
+    if not isinstance(charts, list):
+        charts = []
+        tools["charts"] = charts
 
     existing_ids = {c.get("id") for c in charts if isinstance(c, dict)}
     for chart in _build_ea_charts(pkt):
