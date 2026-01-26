@@ -359,6 +359,48 @@ def _extract_facts_from_doc(text: str) -> Dict[str, Any]:
         "sample_lines": sample_lines,
     }
 
+REQUIRED_EA_KEYS = {
+    "executive_summary",
+    "top_priorities",
+    "key_risks",
+    "cross_brain_actions_7d",
+    "cross_brain_actions_30d",
+    "owner_matrix",
+    "confidence"
+}
+
+def _is_valid_ea_schema(obj: dict) -> bool:
+    if not isinstance(obj, dict):
+        return False
+
+    if not REQUIRED_EA_KEYS.issubset(obj.keys()):
+        return False
+
+    if not obj.get("executive_summary"):
+        return False
+
+    if not isinstance(obj.get("top_priorities"), list) or len(obj["top_priorities"]) < 3:
+        return False
+
+    if not isinstance(obj.get("key_risks"), list) or len(obj["key_risks"]) < 2:
+        return False
+
+    if not isinstance(obj.get("cross_brain_actions_7d"), list):
+        return False
+
+    if not isinstance(obj.get("cross_brain_actions_30d"), list):
+        return False
+
+    owner_matrix = obj.get("owner_matrix")
+    if not isinstance(owner_matrix, dict):
+        return False
+
+    for role in ["CFO", "CMO", "COO", "CHRO", "CPO"]:
+        if role not in owner_matrix or not owner_matrix[role]:
+            return False
+
+    return True
+
 
 def _fallback_from_doc(doc_text: str) -> Dict[str, Any]:
     facts = _extract_facts_from_doc(doc_text)
@@ -469,43 +511,58 @@ def run(
     raw = runner.infer(prompt=prompt, system=PROMPT_SYSTEM)
 
     # Try to parse the JSON directly first (before coerce)
-    try:
-        parsed = json.loads(raw) if isinstance(raw, str) else {}
-    except Exception:
-        parsed = {}
+    def _try_parse_json(s: str) -> Dict[str, Any]:
+        if not isinstance(s, str) or not s.strip():
+            return {}
+        try:
+            j = json.loads(s)
+            return j if isinstance(j, dict) else {}
+        except Exception:
+            return {}
     
-    # If empty output, retry once with stricter instruction
-    if _is_empty_ea_obj(parsed):
-        retry_prompt = (
+    parsed = _try_parse_json(raw)
+    
+    def _needs_repair(obj: Dict[str, Any]) -> bool:
+        return _is_empty_ea_obj(obj) or (not _is_valid_ea_schema(obj))
+    
+    # 1) If empty OR invalid, do a repair-oriented retry once
+    if _needs_repair(parsed):
+        repair_prompt = (
             prompt
-            + "\n\nIMPORTANT: Your previous output was EMPTY. You MUST fill every field with non-empty content. "
-              "If evidence is missing, explicitly write 'Insufficient evidence' items rather than leaving arrays empty."
+            + "\n\nIMPORTANT:\n"
+              "- Your previous output was EMPTY or INVALID JSON.\n"
+              "- Return ONLY valid JSON.\n"
+              "- Include ALL required keys: executive_summary, top_priorities, key_risks, "
+              "cross_brain_actions_7d, cross_brain_actions_30d, owner_matrix, confidence.\n"
+              "- owner_matrix MUST include CFO/CMO/COO/CHRO/CPO each with 1–3 actions.\n"
+              "- If evidence is missing, write 'Insufficient evidence: <what>' instead of leaving fields empty.\n"
         )
+    
         runner2 = OllamaRunner(
             model=model,
             host=host,
             timeout_sec=timeout_sec,
             num_predict=num_predict,
-            temperature=0.0,   # stricter
+            temperature=0.0,
             top_p=top_p,
             repeat_penalty=repeat_penalty,
         )
-        raw2 = runner2.infer(prompt=retry_prompt, system=PROMPT_SYSTEM)
-        try:
-            parsed2 = json.loads(raw2) if isinstance(raw2, str) else {}
-        except Exception:
-            parsed2 = {}
+        raw2 = runner2.infer(prompt=repair_prompt, system=PROMPT_SYSTEM)
+        parsed2 = _try_parse_json(raw2)
     
-        if not _is_empty_ea_obj(parsed2):
+        # Accept retry if it’s now valid
+        if not _needs_repair(parsed2):
             raw = raw2
             parsed = parsed2
     
-    # If still empty after retry, force a non-empty fallback
-    if _is_empty_ea_obj(parsed):
+    # 2) If still invalid after retry, fall back deterministically (doc mode only)
+    if _needs_repair(parsed):
         out = _fallback_from_doc(doc_text)
     else:
-        ea_obj = coerce_ea_json(raw)
-        out = ea_output_to_dict(ea_obj)
+        # Prefer parsed JSON directly; only coerce if needed
+        out = parsed
+        out = ea_output_to_dict(out) if isinstance(out, dict) else ea_output_to_dict(coerce_ea_json(raw))
+
 
 
     # 5) Attach meta for traceability
