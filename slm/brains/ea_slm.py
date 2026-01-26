@@ -567,8 +567,14 @@ def run(
         else:
             out = _fallback_nonempty_ea()
     else:
-        # Prefer parsed dict directly (avoid losing content through coercion)
-        out = ea_output_to_dict(parsed)
+        out = parsed
+    
+        # Ensure tools/charts exists for downstream consumers (charts + UI)
+        if isinstance(out, dict):
+            out.setdefault("tools", {"charts": []})
+            if isinstance(out["tools"], dict):
+                out["tools"].setdefault("charts", [])
+
 
     # Attach meta for traceability (generated in code, not demanded from model)
     out["_meta"] = {
