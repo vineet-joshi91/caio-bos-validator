@@ -17,6 +17,16 @@ from slm.core.ea_core import (
 # EA schema expectations & validators
 # =============================================================================
 
+EA_SYSTEM = (
+    PROMPT_SYSTEM
+    + "\n\n"
+    + "CRITICAL OUTPUT FORMAT:\n"
+      "- Output MUST be a single valid JSON object and NOTHING else.\n"
+      "- No markdown, no code fences, no explanation.\n"
+      "- Do not add any keys outside the required schema.\n"
+      "- If a field lacks evidence, write 'Insufficient evidence: <what>' instead of leaving it empty.\n"
+)
+
 REQUIRED_EA_KEYS = {
     "executive_summary",
     "top_priorities",
@@ -352,6 +362,14 @@ def _build_ea_charts(pkt: Dict[str, Any]) -> List[Dict[str, Any]]:
 # Deterministic doc fallback (used if model fails schema even after repair)
 # =============================================================================
 
+def _extract_json_block(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    # Find the first JSON object-like block
+    m = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    return m.group(0).strip() if m else ""
+
+
 def _extract_facts_from_doc(text: str) -> Dict[str, Any]:
     t = text or ""
 
@@ -520,8 +538,8 @@ def run(
         repeat_penalty=repeat_penalty,
     )
 
-    raw = runner.infer(prompt=prompt, system=PROMPT_SYSTEM)
-    parsed = _try_parse_json(raw)
+    raw = runner.infer(prompt=prompt, system=EA_SYSTEM)
+    parsed = _try_parse_json(_extract_json_block(raw) or raw)
 
     # Pass 2: repair if needed (empty or invalid)
     if _needs_repair(parsed):
@@ -535,8 +553,8 @@ def run(
             top_p=top_p,
             repeat_penalty=repeat_penalty,
         )
-        raw2 = runner2.infer(prompt=repair_prompt, system=PROMPT_SYSTEM)
-        parsed2 = _try_parse_json(raw2)
+        raw2 = runner2.infer(prompt=repair_prompt, system=EA_SYSTEM)
+        parsed2 = _try_parse_json(_extract_json_block(raw2) or raw2)
 
         if not _needs_repair(parsed2):
             raw = raw2
