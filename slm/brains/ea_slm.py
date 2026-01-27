@@ -183,6 +183,82 @@ def _is_valid_ea_schema(obj: Dict[str, Any]) -> bool:
 
     return True
 
+def _normalize_model_ea_dict(d: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert common model variants into the schema we validate/display.
+    Reduces false fallbacks.
+    """
+    if not isinstance(d, dict):
+        return {}
+
+    out = dict(d)
+
+    def _actions_to_strings(v: Any) -> List[str]:
+        if not isinstance(v, list):
+            return []
+        res: List[str] = []
+        for item in v:
+            if isinstance(item, str):
+                s = item.strip()
+                if s:
+                    res.append(s)
+                continue
+
+            if isinstance(item, dict):
+                # {"CFO": "..."} style
+                if len(item) == 1:
+                    k, val = next(iter(item.items()))
+                    if isinstance(k, str) and isinstance(val, str):
+                        s = f"{k}: {val}".strip()
+                        if s:
+                            res.append(s)
+                        continue
+
+                # {"action":"CFO", "description":"..."} style
+                act = item.get("action")
+                desc = item.get("description") or item.get("detail") or item.get("text")
+                owner = item.get("owner")
+                if isinstance(act, str) and isinstance(desc, str):
+                    s = f"{act}: {desc}".strip()
+                    if isinstance(owner, str) and owner.strip():
+                        s += f" (Owner: {owner.strip()})"
+                    res.append(s)
+        return res
+
+    out["cross_brain_actions_7d"] = _actions_to_strings(out.get("cross_brain_actions_7d"))
+    out["cross_brain_actions_30d"] = _actions_to_strings(out.get("cross_brain_actions_30d"))
+
+    # Normalize owner_matrix
+    om = out.get("owner_matrix")
+    if not isinstance(om, dict):
+        om = {}
+    norm_om: Dict[str, List[str]] = {}
+    for role in REQUIRED_ROLES:
+        v = om.get(role)
+        if isinstance(v, list):
+            norm_om[role] = [str(x).strip() for x in v if str(x).strip()]
+        elif isinstance(v, str) and v.strip():
+            norm_om[role] = [v.strip()]
+        else:
+            norm_om[role] = []
+    out["owner_matrix"] = norm_om
+
+    # Ensure tools/charts shape
+    tools = out.get("tools")
+    if not isinstance(tools, dict):
+        tools = {}
+    if not isinstance(tools.get("charts"), list):
+        tools["charts"] = []
+    out["tools"] = tools
+
+    # Confidence numeric
+    try:
+        out["confidence"] = float(out.get("confidence", 0.7))
+    except Exception:
+        out["confidence"] = 0.7
+
+    return out
+
 
 def _needs_repair(obj: Dict[str, Any]) -> bool:
     """
@@ -565,11 +641,9 @@ def run(
         """
         if not isinstance(s, str) or not s.strip():
             return {}
-        block = _extract_json_block(s)
-        parsed_obj = _try_parse_json(block) if block else {}
-        if parsed_obj:
-            return parsed_obj
-        return _try_parse_json(s)
+        candidate = _extract_first_json_object(s) or s
+        return _try_parse_json(candidate)
+
 
     # -----------------------------
     # Pass 1: Primary generation
@@ -585,7 +659,7 @@ def run(
     )
 
     raw1 = runner.infer(prompt=prompt, system=EA_SYSTEM)
-    parsed1 = _parse_model_output(raw1)
+    parsed1 = _normalize_model_ea_dict(_parse_model_output(raw1))
 
     # Keep these variables so we can debug later
     raw2 = ""
@@ -610,7 +684,7 @@ def run(
             repeat_penalty=repeat_penalty,
         )
         raw2 = runner2.infer(prompt=repair_prompt, system=EA_SYSTEM)
-        parsed2 = _parse_model_output(raw2)
+        parsed2 = _normalize_model_ea_dict(_parse_model_output(raw2))
 
         if not _needs_repair(parsed2):
             raw = raw2
