@@ -71,6 +71,9 @@ app.include_router(wallet_router)
 app.include_router(razorpay_webhook_router)
 app.include_router(bos_auth_router, tags=["bos-auth"])
 
+PRIMARY_EA_MODEL = "qwen2.5:3b-instruct"
+FALLBACK_EA_MODEL = "qwen2.5:1.5b-instruct"
+
 # -------------------- Models --------------------
 class EARequest(BaseModel):
     packet: dict
@@ -854,13 +857,26 @@ def run_ea(payload: EARequest):
     out = run_slm(
         tmp_in,
         "ea",
-        model=forced_model,
+        model=PRIMARY_EA_MODEL,
         timeout_sec=payload.timeout_sec,
         num_predict=payload.num_predict,
     )
-    if "error" in out and "ui" not in out:
-        return {"ui": out}
-    return out
+    
+    ui_obj = out.get("ui") if isinstance(out, dict) else None
+    is_fail = (
+        (isinstance(out, dict) and out.get("error"))
+        or (isinstance(ui_obj, dict) and ui_obj.get("error"))
+    )
+    if is_fail:
+        out2 = run_slm(
+            tmp_in,
+            "ea",
+            model=FALLBACK_EA_MODEL,
+            timeout_sec=payload.timeout_sec,
+            num_predict=payload.num_predict,
+        )
+        out = out2
+
 
 
 @app.post("/run-brain")
@@ -905,9 +921,7 @@ async def upload_and_ea(
     """
     filename = file.filename or "upload"
     raw = await file.read()
-    # --- Force default EA model for uploads ---
-    if not model:
-        model = "qwen2.5:3b-instruct"
+    model=PRIMARY_EA_MODEL
 
     # JSON packet path (backward compatible)
     if filename.lower().endswith(".json"):
@@ -968,10 +982,27 @@ async def upload_and_ea(
     out = run_slm(
         tmp_in,
         "ea",
-        model=model,
+        model=PRIMARY_EA_MODEL,
         timeout_sec=timeout_sec,
         num_predict=num_predict,
     )
+    
+    # If primary fails, retry once with fallback model
+    ui_obj = out.get("ui") if isinstance(out, dict) else None
+    is_fail = (
+        (isinstance(out, dict) and out.get("error"))
+        or (isinstance(ui_obj, dict) and ui_obj.get("error"))
+    )
+    if is_fail:
+        out2 = run_slm(
+            tmp_in,
+            "ea",
+            model=FALLBACK_EA_MODEL,
+            timeout_sec=timeout_sec,
+            num_predict=num_predict,
+        )
+        out = out2
+
     
     # Attach extraction metadata
     packet["meta"]["extract"] = extract_meta
