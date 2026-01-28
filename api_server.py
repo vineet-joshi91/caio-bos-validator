@@ -807,6 +807,17 @@ def welcome():
 def run_ea(payload: EARequest):
     # --- Guard: prevent empty Decision Review packets (avoid timeouts / fluff) ---
     pkt = payload.packet or {}
+    # --- Force models by mode ---
+    meta = pkt.get("meta") or {}
+    mode = meta.get("mode")
+    
+    # Default: Executive Action Plan model
+    forced_model = "qwen2.5:3b-instruct"
+    
+    # Decision Review uses a different model (Pro feature)
+    if mode in ("decision_review_from_plan", "decision_review"):
+        forced_model = "phi3:mini"
+
     findings = pkt.get("findings") or []
     insights_map = pkt.get("insights") or {}
     document_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
@@ -843,7 +854,7 @@ def run_ea(payload: EARequest):
     out = run_slm(
         tmp_in,
         "ea",
-        model=payload.model,
+        model=forced_model,
         timeout_sec=payload.timeout_sec,
         num_predict=payload.num_predict,
     )
@@ -894,6 +905,9 @@ async def upload_and_ea(
     """
     filename = file.filename or "upload"
     raw = await file.read()
+    # --- Force default EA model for uploads ---
+    if not model:
+        model = "qwen2.5:3b-instruct"
 
     # JSON packet path (backward compatible)
     if filename.lower().endswith(".json"):

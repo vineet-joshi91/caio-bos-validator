@@ -578,6 +578,28 @@ def _fallback_from_doc(doc_text: str) -> Dict[str, Any]:
         "tools": {"charts": []},
     }
 
+def build_decision_review_prompt(pkt: Dict[str, Any]) -> str:
+    plan_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
+    return (
+        "You are an Executive Decision Reviewer.\n"
+        "You will NOT rewrite the entire plan.\n"
+        "Your job is to audit it for gaps, missing evidence, contradictions, and weak accountability.\n\n"
+        "INPUT_PLAN (verbatim):\n```text\n" + plan_text[:12000] + "\n```\n\n"
+        "Return ONLY valid JSON with this exact schema:\n"
+        "{\n"
+        '  "review_summary": "2-4 sentences",\n'
+        '  "critical_gaps": ["5-10 items, each with Evidence or Insufficient evidence"],\n'
+        '  "risk_flags": ["3-8 items"],\n'
+        '  "missing_metrics": ["3-8 items"],\n'
+        '  "fixes_7d": ["5 items, distinct"],\n'
+        '  "fixes_30d": ["5 items, distinct"],\n'
+        '  "owner_matrix": { "CFO": ["1-3"], "CMO": ["1-3"], "COO": ["1-3"], "CHRO": ["1-3"], "CPO": ["1-3"] },\n'
+        '  "confidence": 0.0\n'
+        "}\n\n"
+        "RULES:\n"
+        "- Every item must reference something from INPUT_PLAN or say 'Insufficient evidence: ...'.\n"
+        "- fixes_7d must be immediate actions; fixes_30d must be longer-horizon and different.\n"
+    )
 
 # =============================================================================
 # Repair prompts
@@ -632,8 +654,14 @@ def run(
     doc_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
     doc_text_len = len(doc_text)
     mode = "doc" if doc_text_len > 0 else "fusion"
+    
+    review_mode = (pkt.get("meta") or {}).get("mode") in ("decision_review_from_plan", "decision_review")
 
-    prompt = build_ea_doc_prompt(pkt) if mode == "doc" else build_ea_prompt(pkt, per_brain_norm)
+    if review_mode:
+        prompt = build_decision_review_prompt(pkt)
+    else:
+        prompt = build_ea_doc_prompt(pkt) if mode == "doc" else build_ea_prompt(pkt, per_brain_norm)
+
 
     def _parse_model_output(s: Any) -> Dict[str, Any]:
         """
