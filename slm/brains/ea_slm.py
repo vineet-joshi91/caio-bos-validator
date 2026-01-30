@@ -39,6 +39,36 @@ REQUIRED_EA_KEYS = {
 
 REQUIRED_ROLES = ["CFO", "CMO", "COO", "CHRO", "CPO"]
 
+REQUIRED_DR_KEYS = {
+    "review_summary",
+    "critical_gaps",
+    "risk_flags",
+    "missing_metrics",
+    "fixes_7d",
+    "fixes_30d",
+    "owner_matrix",
+    "confidence",
+}
+
+def _is_valid_decision_review_schema(obj: Dict[str, Any]) -> bool:
+    if not isinstance(obj, dict):
+        return False
+    if not REQUIRED_DR_KEYS.issubset(set(obj.keys())):
+        return False
+    if not isinstance(obj.get("review_summary"), str) or not obj["review_summary"].strip():
+        return False
+    for k in ["critical_gaps", "risk_flags", "missing_metrics", "fixes_7d", "fixes_30d"]:
+        v = obj.get(k)
+        if not isinstance(v, list) or len(v) < 3:
+            return False
+    om = obj.get("owner_matrix")
+    if not isinstance(om, dict):
+        return False
+    for role in REQUIRED_ROLES:
+        v = om.get(role)
+        if not isinstance(v, list) or len(v) < 1:
+            return False
+    return True
 
 def _ea_schema_template() -> Dict[str, Any]:
     """
@@ -643,35 +673,90 @@ def run(
     """
     Executive Assistant (EA) fan-in stage.
 
+    Supports TWO modes:
+    1) Executive Action Plan (EA): returns EA schema.
+    2) Decision Review: returns Decision Review schema (pros/cons/gaps/fixes), NOT EA.
+
     Key behaviors:
     - doc mode if pkt has document_text/text
     - fusion mode otherwise
-    - 2-pass generation: initial -> repair (if empty/invalid) -> deterministic fallback
-    - Always attaches _meta and charts
+    - 2-pass generation: initial -> repair -> fallback
+    - Always attaches _meta and charts (charts only for EA mode)
     """
+
     per_brain_norm = _normalize_per_brain(per_brain)
 
+    # Determine "doc" vs "fusion"
     doc_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
     doc_text_len = len(doc_text)
     mode = "doc" if doc_text_len > 0 else "fusion"
-    
-    review_mode = (pkt.get("meta") or {}).get("mode") in ("decision_review_from_plan", "decision_review")
 
+    # Determine decision review mode
+    meta = pkt.get("meta") or {}
+    review_mode = meta.get("mode") in ("decision_review_from_plan", "decision_review")
+
+    # -----------------------------
+    # Decision Review schema validation (separate from EA)
+    # -----------------------------
+    REQUIRED_DR_KEYS = {
+        "review_summary",
+        "critical_gaps",
+        "risk_flags",
+        "missing_metrics",
+        "fixes_7d",
+        "fixes_30d",
+        "owner_matrix",
+        "confidence",
+    }
+
+    def _is_valid_decision_review_schema(obj: Dict[str, Any]) -> bool:
+        if not isinstance(obj, dict):
+            return False
+        if not REQUIRED_DR_KEYS.issubset(set(obj.keys())):
+            return False
+        if not isinstance(obj.get("review_summary"), str) or not obj["review_summary"].strip():
+            return False
+
+        for k in ["critical_gaps", "risk_flags", "missing_metrics", "fixes_7d", "fixes_30d"]:
+            v = obj.get(k)
+            if not isinstance(v, list) or len(v) < 3:
+                return False
+
+        om = obj.get("owner_matrix")
+        if not isinstance(om, dict):
+            return False
+        for role in REQUIRED_ROLES:
+            v = om.get(role)
+            if not isinstance(v, list) or len(v) < 1:
+                return False
+
+        try:
+            float(obj.get("confidence", 0.0))
+        except Exception:
+            return False
+
+        return True
+
+    # -----------------------------
+    # Prompt selection
+    # -----------------------------
     if review_mode:
         prompt = build_decision_review_prompt(pkt)
     else:
         prompt = build_ea_doc_prompt(pkt) if mode == "doc" else build_ea_prompt(pkt, per_brain_norm)
 
-
     def _parse_model_output(s: Any) -> Dict[str, Any]:
-        """
-        Robust parse: try extracted JSON block first, then raw.
-        """
         if not isinstance(s, str) or not s.strip():
             return {}
         candidate = _extract_first_json_object(s) or s
         return _try_parse_json(candidate)
 
+    def _needs_repair_mode(obj: Dict[str, Any]) -> bool:
+        # Different validation depending on mode
+        if review_mode:
+            return (not isinstance(obj, dict)) or (not _is_valid_decision_review_schema(obj))
+        # EA mode uses your existing EA validator
+        return _needs_repair(obj)
 
     # -----------------------------
     # Pass 1: Primary generation
@@ -687,9 +772,12 @@ def run(
     )
 
     raw1 = runner.infer(prompt=prompt, system=EA_SYSTEM)
-    parsed1 = _normalize_model_ea_dict(_parse_model_output(raw1))
+    parsed1 = _parse_model_output(raw1)
 
-    # Keep these variables so we can debug later
+    # Normalize EA only (Decision Review schema should remain as-is)
+    if not review_mode:
+        parsed1 = _normalize_model_ea_dict(parsed1)
+
     raw2 = ""
     parsed2: Dict[str, Any] = {}
 
@@ -699,7 +787,7 @@ def run(
     parsed = parsed1
     raw = raw1
 
-    if _needs_repair(parsed1):
+    if _needs_repair_mode(parsed1):
         repair_prompt = _build_repair_prompt(prompt, raw1 if isinstance(raw1, str) else "")
 
         runner2 = OllamaRunner(
@@ -707,24 +795,26 @@ def run(
             host=host,
             timeout_sec=timeout_sec,
             num_predict=num_predict,
-            temperature=0.0,   # stricter
+            temperature=0.0,
             top_p=top_p,
             repeat_penalty=repeat_penalty,
         )
         raw2 = runner2.infer(prompt=repair_prompt, system=EA_SYSTEM)
-        parsed2 = _normalize_model_ea_dict(_parse_model_output(raw2))
+        parsed2 = _parse_model_output(raw2)
 
-        if not _needs_repair(parsed2):
+        if not review_mode:
+            parsed2 = _normalize_model_ea_dict(parsed2)
+
+        if not _needs_repair_mode(parsed2):
             raw = raw2
             parsed = parsed2
 
     # -----------------------------
     # Final decision + DEBUG
     # -----------------------------
-    if _needs_repair(parsed):
-        # Debug prints ONLY when we end up falling back
+    if _needs_repair_mode(parsed):
         try:
-            print("[EA_DEBUG] Fallback triggered (still empty/invalid after repair).")
+            print("[EA_DEBUG] Fallback triggered (still invalid after repair). review_mode=", review_mode)
             if isinstance(raw1, str):
                 print("[EA_DEBUG] raw1_head:", raw1[:400].replace("\n", "\\n"))
                 print("[EA_DEBUG] raw1_tail:", raw1[-400:].replace("\n", "\\n"))
@@ -732,17 +822,28 @@ def run(
                 print("[EA_DEBUG] raw2_head:", raw2[:400].replace("\n", "\\n"))
                 print("[EA_DEBUG] raw2_tail:", raw2[-400:].replace("\n", "\\n"))
         except Exception:
-            # Never break the pipeline due to debug
             pass
 
-        if mode == "doc" and doc_text_len > 0:
-            out = _fallback_from_doc(doc_text)
+        if review_mode:
+            # Decision Review fallback (NOT EA fallback)
+            out = {
+                "review_summary": "Decision Review failed to generate a valid schema.",
+                "critical_gaps": ["Insufficient evidence: model output invalid or incomplete"],
+                "risk_flags": ["Model output invalid or incomplete"],
+                "missing_metrics": ["Insufficient evidence: metrics not extracted"],
+                "fixes_7d": ["Re-run Decision Review with higher num_predict or lower temperature"],
+                "fixes_30d": ["Upgrade model capacity or adjust Decision Review prompt"],
+                "owner_matrix": {r: ["Insufficient evidence"] for r in REQUIRED_ROLES},
+                "confidence": 0.0,
+                "tools": {"charts": []},
+            }
         else:
-            out = _fallback_nonempty_ea()
+            # EA fallback (doc-first deterministic)
+            out = _fallback_from_doc(doc_text) if (mode == "doc" and doc_text_len > 0) else _fallback_nonempty_ea()
     else:
         out = parsed
 
-        # Ensure tools/charts exists for downstream consumers (charts + UI)
+        # Ensure tools/charts exists for downstream consumers
         if isinstance(out, dict):
             out.setdefault("tools", {"charts": []})
             if isinstance(out["tools"], dict):
@@ -752,7 +853,6 @@ def run(
     # Attach meta (always)
     # -----------------------------
     if not isinstance(out, dict):
-        # safety: never return non-dict
         out = _fallback_nonempty_ea()
 
     out["_meta"] = {
@@ -760,28 +860,29 @@ def run(
         "model": model,
         "bytes_in": len(prompt) if isinstance(prompt, str) else 0,
         "bytes_out": len(raw) if isinstance(raw, str) else 0,
-        "confidence": out.get("confidence", 0.8),
-        "mode": mode,
+        "confidence": out.get("confidence", 0.0 if review_mode else 0.8),
+        "mode": "decision_review" if review_mode else mode,
         "doc_text_len": doc_text_len,
     }
 
     # -----------------------------
-    # Attach EA-level charts
+    # Charts only for EA mode
     # -----------------------------
-    tools: Dict[str, Any] = out.setdefault("tools", {})
-    if not isinstance(tools, dict):
-        tools = {}
-        out["tools"] = tools
+    if not review_mode:
+        tools: Dict[str, Any] = out.setdefault("tools", {})
+        if not isinstance(tools, dict):
+            tools = {}
+            out["tools"] = tools
 
-    charts = tools.setdefault("charts", [])
-    if not isinstance(charts, list):
-        charts = []
-        tools["charts"] = charts
+        charts = tools.setdefault("charts", [])
+        if not isinstance(charts, list):
+            charts = []
+            tools["charts"] = charts
 
-    existing_ids = {c.get("id") for c in charts if isinstance(c, dict)}
-    for chart in _build_ea_charts(pkt):
-        cid = chart.get("id")
-        if cid and cid not in existing_ids:
-            charts.append(chart)
+        existing_ids = {c.get("id") for c in charts if isinstance(c, dict)}
+        for chart in _build_ea_charts(pkt):
+            cid = chart.get("id")
+            if cid and cid not in existing_ids:
+                charts.append(chart)
 
     return out
