@@ -810,16 +810,6 @@ def welcome():
 def run_ea(payload: EARequest):
     # --- Guard: prevent empty Decision Review packets (avoid timeouts / fluff) ---
     pkt = payload.packet or {}
-    # --- Force models by mode ---
-    meta = pkt.get("meta") or {}
-    mode = meta.get("mode")
-    
-    # Default: Executive Action Plan model
-    forced_model = "qwen2.5:3b-instruct"
-    
-    # Decision Review uses a different model (Pro feature)
-    if mode in ("decision_review_from_plan", "decision_review"):
-        forced_model = "phi3:mini"
 
     findings = pkt.get("findings") or []
     insights_map = pkt.get("insights") or {}
@@ -837,45 +827,78 @@ def run_ea(payload: EARequest):
     if (not findings) and (not has_insights) and (not document_text):
         raise HTTPException(
             status_code=400,
-            detail="Decision Review requires findings/insights or document_text. Upload a file (Analyze) or provide a populated validator packet."
+            detail=(
+                "Decision Review requires findings/insights or document_text. "
+                "Upload a file (Analyze) or provide a populated validator packet."
+            ),
         )
 
-    # Charge credits (if configured)
+    # --- Charge credits (if configured) ---
     try:
         charge_bos_run(payload.user_id, payload.plan_tier)
     except InsufficientCreditsError as e:
         raise HTTPException(status_code=402, detail=str(e))
     except Exception:
-        # If charging fails, still allow run; you can tighten later
+        # If charging fails, still allow run; tighten later if you want
         pass
 
-    # Save packet to temp file
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w", encoding="utf-8") as tf:
+    # --- Save packet to temp file ---
+    with tempfile.NamedTemporaryFile(
+        suffix=".json", delete=False, mode="w", encoding="utf-8"
+    ) as tf:
         json.dump(payload.packet, tf, ensure_ascii=False, indent=2)
         tmp_in = tf.name
 
+    # --- Single-model policy: Primary + Fallback ---
+    primary_model = "qwen2.5:3b-instruct"
+    fallback_model = "qwen2.5:1.5b-instruct"
+
+    # Use request overrides if you ever want later; for now enforce primary
+    # (keeps behavior stable and prevents accidental weak models)
+    timeout_sec = payload.timeout_sec
+    num_predict = payload.num_predict
+
+    # --- Run primary ---
     out = run_slm(
         tmp_in,
         "ea",
-        model=PRIMARY_EA_MODEL,
-        timeout_sec=payload.timeout_sec,
-        num_predict=payload.num_predict,
+        model=primary_model,
+        timeout_sec=timeout_sec,
+        num_predict=num_predict,
     )
-    
+
+    # Detect failure (either top-level error or ui.error)
     ui_obj = out.get("ui") if isinstance(out, dict) else None
     is_fail = (
-        (isinstance(out, dict) and out.get("error"))
+        (not isinstance(out, dict))
+        or (isinstance(out, dict) and out.get("error"))
         or (isinstance(ui_obj, dict) and ui_obj.get("error"))
     )
+
+    # --- If primary failed, retry once with fallback ---
     if is_fail:
         out2 = run_slm(
             tmp_in,
             "ea",
-            model=FALLBACK_EA_MODEL,
-            timeout_sec=payload.timeout_sec,
-            num_predict=payload.num_predict,
+            model=fallback_model,
+            timeout_sec=timeout_sec,
+            num_predict=num_predict,
         )
         out = out2
+
+    # --- Final safety: never return None / invalid types ---
+    if out is None:
+        return {"ui": {"error": "Empty response from run_slm", "stdout": "", "stderr": ""}}
+
+    if not isinstance(out, dict):
+        return {"ui": {"error": "Invalid response type from run_slm", "stdout": "", "stderr": str(out)}}
+
+    # If run_slm returned {"error": "..."} without ui wrapper, wrap it
+    if "error" in out and "ui" not in out:
+        return {"ui": out}
+
+    return out
+
 
 
 
