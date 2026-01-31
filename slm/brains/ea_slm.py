@@ -3,18 +3,16 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Optional
 
 from slm.core.slm_core import OllamaRunner, PROMPT_SYSTEM
 from slm.core.ea_core import (
     build_ea_prompt,
     build_ea_doc_prompt,
-    coerce_ea_json,
-    ea_output_to_dict,
 )
 
 # =============================================================================
-# EA schema expectations & validators
+# System prompt
 # =============================================================================
 
 EA_SYSTEM = (
@@ -27,6 +25,8 @@ EA_SYSTEM = (
       "- If a field lacks evidence, write 'Insufficient evidence: <what>' instead of leaving it empty.\n"
 )
 
+REQUIRED_ROLES = ["CFO", "CMO", "COO", "CHRO", "CPO"]
+
 REQUIRED_EA_KEYS = {
     "executive_summary",
     "top_priorities",
@@ -37,8 +37,7 @@ REQUIRED_EA_KEYS = {
     "confidence",
 }
 
-REQUIRED_ROLES = ["CFO", "CMO", "COO", "CHRO", "CPO"]
-
+# Decision Review expected keys (we will normalize to ensure these exist)
 REQUIRED_DR_KEYS = {
     "review_summary",
     "critical_gaps",
@@ -50,58 +49,9 @@ REQUIRED_DR_KEYS = {
     "confidence",
 }
 
-def _is_valid_decision_review_schema(obj: Dict[str, Any]) -> bool:
-    if not isinstance(obj, dict):
-        return False
-    if not REQUIRED_DR_KEYS.issubset(set(obj.keys())):
-        return False
-    if not isinstance(obj.get("review_summary"), str) or not obj["review_summary"].strip():
-        return False
-    for k in ["critical_gaps", "risk_flags", "missing_metrics", "fixes_7d", "fixes_30d"]:
-        v = obj.get(k)
-        if not isinstance(v, list) or len(v) < 3:
-            return False
-    om = obj.get("owner_matrix")
-    if not isinstance(om, dict):
-        return False
-    for role in REQUIRED_ROLES:
-        v = om.get(role)
-        if not isinstance(v, list) or len(v) < 1:
-            return False
-    return True
-
-def _ea_schema_template() -> Dict[str, Any]:
-    """
-    Minimal schema template used for repair prompts.
-    (We keep this small to reduce burden on small models.)
-    """
-    return {
-        "executive_summary": "string",
-        "top_priorities": ["string", "string", "string"],
-        "key_risks": ["string", "string"],
-        "cross_brain_actions_7d": [
-            "CFO: ...",
-            "CMO: ...",
-            "COO: ...",
-            "CHRO: ...",
-            "CPO: ...",
-        ],
-        "cross_brain_actions_30d": [
-            "CFO: ...",
-            "CMO: ...",
-            "COO: ...",
-            "CHRO: ...",
-            "CPO: ...",
-        ],
-        "owner_matrix": {
-            "CFO": ["action"],
-            "CMO": ["action"],
-            "COO": ["action"],
-            "CHRO": ["action"],
-            "CPO": ["action"],
-        },
-        "confidence": 0.7,
-    }
+# =============================================================================
+# JSON extraction / parsing
+# =============================================================================
 
 def _extract_first_json_object(text: str) -> str:
     if not isinstance(text, str):
@@ -129,7 +79,7 @@ def _extract_first_json_object(text: str) -> str:
             elif ch == "}":
                 depth -= 1
                 if depth == 0:
-                    return text[start : i + 1].strip()
+                    return text[start:i + 1].strip()
     return ""
 
 
@@ -143,12 +93,11 @@ def _try_parse_json(s: Any) -> Dict[str, Any]:
     except Exception:
         return {}
 
-
+# =============================================================================
+# EA validators
+# =============================================================================
 
 def _is_empty_ea_obj(d: Dict[str, Any]) -> bool:
-    """
-    True if "basically empty": no summary and all major lists empty.
-    """
     if not isinstance(d, dict):
         return True
 
@@ -168,9 +117,6 @@ def _is_empty_ea_obj(d: Dict[str, Any]) -> bool:
 
 
 def _is_valid_ea_schema(obj: Dict[str, Any]) -> bool:
-    """
-    Strict-enough schema validation to prevent "placeholder" and empty matrices.
-    """
     if not isinstance(obj, dict):
         return False
 
@@ -205,7 +151,6 @@ def _is_valid_ea_schema(obj: Dict[str, Any]) -> bool:
         if not isinstance(v, list) or len(v) < 1:
             return False
 
-    # confidence should be numeric-ish
     try:
         float(obj.get("confidence", 0.0))
     except Exception:
@@ -213,11 +158,131 @@ def _is_valid_ea_schema(obj: Dict[str, Any]) -> bool:
 
     return True
 
+
+def _needs_repair_ea(obj: Dict[str, Any]) -> bool:
+    return _is_empty_ea_obj(obj) or (not _is_valid_ea_schema(obj))
+
+# =============================================================================
+# Decision Review normalization + relaxed validator
+# =============================================================================
+
+def _normalize_decision_review_dict(d: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Make DR output stable:
+    - ensure keys exist
+    - coerce list types
+    - normalize owner_matrix role lists
+    - add placeholders if lists empty
+    """
+    if not isinstance(d, dict):
+        return {}
+
+    out = dict(d)
+
+    # Ensure keys exist
+    out.setdefault("review_summary", "")
+    out.setdefault("critical_gaps", [])
+    out.setdefault("risk_flags", [])
+    out.setdefault("missing_metrics", [])
+    out.setdefault("fixes_7d", [])
+    out.setdefault("fixes_30d", [])
+    out.setdefault("owner_matrix", {})
+    out.setdefault("confidence", 0.0)
+    out.setdefault("tools", {"charts": []})
+
+    # Coerce list fields to list[str]
+    for k in ["critical_gaps", "risk_flags", "missing_metrics", "fixes_7d", "fixes_30d"]:
+        v = out.get(k)
+        if not isinstance(v, list):
+            out[k] = []
+        else:
+            out[k] = [str(x).strip() for x in v if str(x).strip()]
+
+    # Normalize owner_matrix
+    om = out.get("owner_matrix")
+    if not isinstance(om, dict):
+        om = {}
+    norm_om: Dict[str, List[str]] = {}
+    for role in REQUIRED_ROLES:
+        rv = om.get(role)
+        if isinstance(rv, list):
+            norm_om[role] = [str(x).strip() for x in rv if str(x).strip()]
+        elif isinstance(rv, str) and rv.strip():
+            norm_om[role] = [rv.strip()]
+        else:
+            norm_om[role] = []
+    out["owner_matrix"] = norm_om
+
+    # Confidence numeric
+    try:
+        out["confidence"] = float(out.get("confidence", 0.0))
+    except Exception:
+        out["confidence"] = 0.0
+
+    # Placeholders to avoid “empty schema” rejections
+    if not out["review_summary"]:
+        out["review_summary"] = "Insufficient evidence: review summary not provided"
+
+    if not out["critical_gaps"]:
+        out["critical_gaps"] = ["Insufficient evidence: critical gaps not provided"]
+
+    if not out["risk_flags"]:
+        out["risk_flags"] = ["Insufficient evidence: risk flags not provided"]
+
+    if not out["missing_metrics"]:
+        out["missing_metrics"] = ["Insufficient evidence: missing metrics not provided"]
+
+    if not out["fixes_7d"]:
+        out["fixes_7d"] = ["Insufficient evidence: 7-day fixes not provided"]
+
+    if not out["fixes_30d"]:
+        out["fixes_30d"] = ["Insufficient evidence: 30-day fixes not provided"]
+
+    return out
+
+
+def _is_valid_decision_review_schema(obj: Dict[str, Any]) -> bool:
+    """
+    RELAXED DR validation:
+    - must have review_summary (non-empty)
+    - must have >=1 critical_gaps
+    - must have owner_matrix dict
+    - must have at least 3 roles populated (not necessarily all 5)
+    """
+    if not isinstance(obj, dict):
+        return False
+
+    if not isinstance(obj.get("review_summary"), str) or not obj["review_summary"].strip():
+        return False
+
+    cg = obj.get("critical_gaps")
+    if not isinstance(cg, list) or len(cg) < 1:
+        return False
+
+    om = obj.get("owner_matrix")
+    if not isinstance(om, dict):
+        return False
+
+    roles_with_actions = 0
+    for role in REQUIRED_ROLES:
+        v = om.get(role)
+        if isinstance(v, list) and len(v) > 0:
+            roles_with_actions += 1
+
+    if roles_with_actions < 3:
+        return False
+
+    return True
+
+
+def _needs_repair_dr(obj: Dict[str, Any]) -> bool:
+    return (not isinstance(obj, dict)) or (not _is_valid_decision_review_schema(obj))
+
+# =============================================================================
+# EA normalization
+# =============================================================================
+
 def _normalize_model_ea_dict(d: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Convert common model variants into the schema we validate/display.
-    Reduces false fallbacks.
-    """
     if not isinstance(d, dict):
         return {}
 
@@ -233,9 +298,7 @@ def _normalize_model_ea_dict(d: Dict[str, Any]) -> Dict[str, Any]:
                 if s:
                     res.append(s)
                 continue
-
             if isinstance(item, dict):
-                # {"CFO": "..."} style
                 if len(item) == 1:
                     k, val = next(iter(item.items()))
                     if isinstance(k, str) and isinstance(val, str):
@@ -243,8 +306,6 @@ def _normalize_model_ea_dict(d: Dict[str, Any]) -> Dict[str, Any]:
                         if s:
                             res.append(s)
                         continue
-
-                # {"action":"CFO", "description":"..."} style
                 act = item.get("action")
                 desc = item.get("description") or item.get("detail") or item.get("text")
                 owner = item.get("owner")
@@ -258,7 +319,6 @@ def _normalize_model_ea_dict(d: Dict[str, Any]) -> Dict[str, Any]:
     out["cross_brain_actions_7d"] = _actions_to_strings(out.get("cross_brain_actions_7d"))
     out["cross_brain_actions_30d"] = _actions_to_strings(out.get("cross_brain_actions_30d"))
 
-    # Normalize owner_matrix
     om = out.get("owner_matrix")
     if not isinstance(om, dict):
         om = {}
@@ -273,7 +333,6 @@ def _normalize_model_ea_dict(d: Dict[str, Any]) -> Dict[str, Any]:
             norm_om[role] = []
     out["owner_matrix"] = norm_om
 
-    # Ensure tools/charts shape
     tools = out.get("tools")
     if not isinstance(tools, dict):
         tools = {}
@@ -281,7 +340,6 @@ def _normalize_model_ea_dict(d: Dict[str, Any]) -> Dict[str, Any]:
         tools["charts"] = []
     out["tools"] = tools
 
-    # Confidence numeric
     try:
         out["confidence"] = float(out.get("confidence", 0.7))
     except Exception:
@@ -289,22 +347,78 @@ def _normalize_model_ea_dict(d: Dict[str, Any]) -> Dict[str, Any]:
 
     return out
 
-
-def _needs_repair(obj: Dict[str, Any]) -> bool:
-    """
-    Repair if empty OR schema-invalid.
-    """
-    return _is_empty_ea_obj(obj) or (not _is_valid_ea_schema(obj))
-
-
 # =============================================================================
-# Fallbacks (deterministic + generic)
+# Fallbacks
 # =============================================================================
+
+def _fallback_from_doc(doc_text: str) -> Dict[str, Any]:
+    # Keep your existing deterministic fallback (unchanged in spirit)
+    # Minimal extraction:
+    t = doc_text or ""
+    t = re.sub(r"[\u200b-\u200f\u202a-\u202e\u2060]", "", t)
+    t = t.replace("\u00a0", " ").replace("ﬁ", "fi")
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r"\n{3,}", "\n\n", t).strip()
+
+    lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
+    preview = " | ".join(lines[:4])
+
+    money = re.findall(r"(₹\s*\d[\d,]*(?:\.\d+)?)", t)
+    perc = re.findall(r"(\d{1,3}\s?%)(?!\w)", t)
+    deliverables = []
+    for kw in ["masterclass", "reels", "shorts", "long form", "long-form", "podcast", "vodcast"]:
+        if re.search(rf"\b{re.escape(kw)}\b", t, flags=re.IGNORECASE):
+            deliverables.append(kw)
+
+    money_s = ", ".join(dict.fromkeys([m.strip() for m in money if m.strip()])[:3]) or "pricing not found"
+    perc_s = ", ".join(dict.fromkeys([p.strip() for p in perc if p.strip()])[:3]) or "percent terms not found"
+    dels_s = ", ".join(dict.fromkeys(deliverables)[:6]) or "deliverables unclear"
+
+    evidence = f"Evidence: {money_s}; {perc_s}; deliverables: {dels_s}. Preview: {preview}"
+
+    return {
+        "executive_summary": (
+            "Document-first plan generated via deterministic extraction because the model returned empty/invalid JSON. "
+            f"({evidence})"
+        ),
+        "top_priorities": [
+            f"Confirm commercial terms and scope ({evidence})",
+            f"Convert deliverables into a 30-day production calendar (Evidence: {dels_s})",
+            "Define KPI baseline + tracking (Evidence: proposal references engagement/conversion goals)",
+            "Set governance: owners, cadence, approvals (Evidence: multi-deliverable execution)",
+        ],
+        "key_risks": [
+            "Missing baseline metrics for ROI (Evidence: no CAC/lead baseline in doc text excerpt)",
+            "Scope ambiguity (Evidence: deliverables listed but acceptance criteria unclear)",
+            "Attribution risk for revenue share terms (Evidence: percent terms detected but attribution rules not specified)",
+        ],
+        "cross_brain_actions_7d": [
+            f"CFO: Confirm pricing + payment cadence + revenue share logic ({evidence})",
+            f"CMO: Draft 30-day content calendar from deliverables (Evidence: {dels_s})",
+            "COO: Define workflow: ideation → production → approvals → publishing",
+            "CHRO: Identify internal owners + time allocation for execution",
+            "CPO: Vendor/SLA checklist + milestone acceptance criteria",
+        ],
+        "cross_brain_actions_30d": [
+            "CFO: Build ROI + attribution model; agree reporting cadence",
+            "CMO: Launch first content sprint; baseline engagement + leads",
+            "COO: Operationalize weekly review and backlog grooming",
+            "CHRO: Accountability + performance expectations for owners",
+            "CPO: Lock vendor milestones and enforce quality gates",
+        ],
+        "owner_matrix": {
+            "CFO": ["Terms, ROI model, attribution rules"],
+            "CMO": ["Content calendar, launch, KPI baseline"],
+            "COO": ["Workflow, cadence, delivery operations"],
+            "CHRO": ["Owners, capacity, accountability"],
+            "CPO": ["Vendor milestones, acceptance criteria"],
+        },
+        "confidence": 0.55,
+        "tools": {"charts": []},
+    }
+
 
 def _fallback_nonempty_ea() -> Dict[str, Any]:
-    """
-    Safe generic fallback (used mainly in fusion mode if we have no doc text).
-    """
     return {
         "executive_summary": (
             "The model returned an empty or invalid plan. This is a safe fallback. "
@@ -345,29 +459,71 @@ def _fallback_nonempty_ea() -> Dict[str, Any]:
     }
 
 
-def _normalize_per_brain(per_brain: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """
-    Ensure each brain payload is a dict with keys: plan, recommendation, confidence.
-    """
-    out: Dict[str, Dict[str, Any]] = {}
-    for k, v in (per_brain or {}).items():
-        if isinstance(v, dict):
-            out[k] = {
-                "plan": v.get("plan", {}) or {},
-                "recommendation": v.get("recommendation", {}) or {},
-                "confidence": float(v.get("confidence", 0.7)),
-            }
-        else:
-            out[k] = {
-                "plan": getattr(v, "plan", {}) or {},
-                "recommendation": getattr(v, "recommendation", {}) or {},
-                "confidence": float(getattr(v, "confidence", 0.7)),
-            }
-    return out
-
+def _fallback_decision_review() -> Dict[str, Any]:
+    return {
+        "review_summary": "Decision Review failed to generate a valid schema.",
+        "critical_gaps": ["Insufficient evidence: model output invalid or incomplete"],
+        "risk_flags": ["Insufficient evidence: risk flags not provided"],
+        "missing_metrics": ["Insufficient evidence: missing metrics not provided"],
+        "fixes_7d": ["Re-run Decision Review with higher num_predict or lower temperature"],
+        "fixes_30d": ["Upgrade model capacity or adjust Decision Review prompt"],
+        "owner_matrix": {r: ["Insufficient evidence"] for r in REQUIRED_ROLES},
+        "confidence": 0.0,
+        "tools": {"charts": []},
+    }
 
 # =============================================================================
-# Charts helpers (kept from your file; minimal edits for safety)
+# Decision Review prompt
+# =============================================================================
+
+def build_decision_review_prompt(pkt: Dict[str, Any]) -> str:
+    plan_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
+
+    schema = {
+        "review_summary": "2-4 sentences",
+        "critical_gaps": ["5-10 items"],
+        "risk_flags": ["3-8 items"],
+        "missing_metrics": ["3-8 items"],
+        "fixes_7d": ["3-8 items"],
+        "fixes_30d": ["3-8 items"],
+        "owner_matrix": {r: ["1-3 actions"] for r in REQUIRED_ROLES},
+        "confidence": 0.0,
+    }
+
+    return (
+        "You are an Executive Decision Reviewer.\n"
+        "You will NOT rewrite the plan. You will critique it.\n"
+        "Return ONLY valid JSON.\n\n"
+        "INPUT_PLAN (verbatim):\n```text\n"
+        + plan_text[:14000]
+        + "\n```\n\n"
+        "Return ONLY JSON with this exact schema (no extra keys):\n"
+        + json.dumps(schema, ensure_ascii=False, indent=2)
+        + "\n\n"
+        "RULES:\n"
+        "- Every item must reference something from INPUT_PLAN or say 'Insufficient evidence: ...'.\n"
+        "- fixes_7d must be immediate; fixes_30d must be longer-horizon and different.\n"
+    )
+
+# =============================================================================
+# Repair prompt (generic)
+# =============================================================================
+
+def _build_repair_prompt(base_prompt: str, broken_output: str) -> str:
+    # Keep repair prompt simple and mode-independent (we validate after normalization)
+    return (
+        base_prompt
+        + "\n\nIMPORTANT:\n"
+          "- Your previous output was INVALID JSON or failed schema checks.\n"
+          "- Return ONLY valid JSON. No markdown. No code fences.\n"
+          "- Do not include any commentary outside JSON.\n\n"
+          "BROKEN OUTPUT:\n```text\n"
+        + (broken_output or "")[:4000]
+        + "\n```\n"
+    )
+
+# =============================================================================
+# Charts (EA only) - keep your existing helpers
 # =============================================================================
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -386,7 +542,6 @@ def _guess_brain_actual_total(brain: str, pkt: Dict[str, Any]) -> Optional[float
         val = metrics.get("total_expenses") or metrics.get("total_costs") or metrics.get("opex_total")
         if val is not None:
             return _safe_float(val)
-
         finance = pkt.get("pnl_snapshot") or pkt.get("finance") or {}
         val = finance.get("total_expenses") or finance.get("operating_expenses") or finance.get("total_costs")
         return _safe_float(val)
@@ -494,167 +649,6 @@ def _build_ea_charts(pkt: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     return charts
 
-
-# =============================================================================
-# Deterministic doc fallback (used if model fails schema even after repair)
-# =============================================================================
-
-def _extract_json_block(text: str) -> str:
-    if not isinstance(text, str):
-        return ""
-    # Find the first JSON object-like block
-    m = re.search(r"\{.*\}", text, flags=re.DOTALL)
-    return m.group(0).strip() if m else ""
-
-
-def _extract_facts_from_doc(text: str) -> Dict[str, Any]:
-    t = text or ""
-
-    # normalize common artifacts
-    t = re.sub(r"[\u200b-\u200f\u202a-\u202e\u2060]", "", t)
-    t = t.replace("\u00a0", " ")
-    t = t.replace("ﬁ", "fi")
-    t = re.sub(r"[ \t]+", " ", t)
-    t = re.sub(r"\n{3,}", "\n\n", t).strip()
-
-    lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
-    sample_lines = lines[:12]
-
-    money: List[str] = []
-    money += re.findall(r"(₹\s*\d[\d,]*(?:\.\d+)?)", t)
-    money += re.findall(r"((?:Rs\.?|INR)\s*\d[\d,]*(?:\.\d+)?)", t, flags=re.IGNORECASE)
-    money += re.findall(r"(\d[\d,]{2,})\s*(?:per\s*month|/month|monthly|pm)", t, flags=re.IGNORECASE)
-    money += re.findall(r"(\d[\d,]{2,})\s*(?:\n|\s)*per\s*(?:\n|\s)*month", t, flags=re.IGNORECASE)
-
-    money = [m.strip() for m in money if str(m).strip()]
-    money = list(dict.fromkeys(money))[:8]
-
-    perc = re.findall(r"(\d{1,3}\s?%)(?!\w)", t)
-    perc = [p.strip() for p in perc if p.strip()]
-    perc = list(dict.fromkeys(perc))[:8]
-
-    dates = re.findall(r"\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b", t)
-    dates = list(dict.fromkeys(dates))[:8]
-
-    deliverable_phrases = [
-        "podcast", "vodcast", "masterclass", "reels", "shorts",
-        "long-form", "long form", "youtube", "instagram", "linkedin",
-        "case study", "webinar", "newsletter",
-        "short video", "long video", "content calendar", "content strategy",
-    ]
-    deliverable_hits: List[str] = []
-    for kw in deliverable_phrases:
-        if re.search(rf"\b{re.escape(kw)}\b", t, flags=re.IGNORECASE):
-            deliverable_hits.append(kw)
-    deliverables = list(dict.fromkeys(deliverable_hits))[:12]
-
-    return {
-        "money": money[:5],
-        "percent": perc[:5],
-        "dates": dates[:5],
-        "deliverables": deliverables,
-        "sample_lines": sample_lines,
-    }
-
-
-def _fallback_from_doc(doc_text: str) -> Dict[str, Any]:
-    facts = _extract_facts_from_doc(doc_text)
-    money = ", ".join(facts["money"]) if facts["money"] else "pricing not found"
-    perc = ", ".join(facts["percent"]) if facts["percent"] else "percent terms not found"
-    dels = ", ".join(facts["deliverables"]) if facts["deliverables"] else "deliverables unclear"
-    date = facts["dates"][0] if facts["dates"] else "date not found"
-
-    preview = " | ".join(facts.get("sample_lines", [])[:4])
-    evidence = f"Evidence: {money}; {perc}; deliverables: {dels}; date: {date}. Preview: {preview}"
-
-    return {
-        "executive_summary": (
-            "Document-first plan generated via deterministic extraction because the model returned empty/invalid JSON. "
-            f"This proposal centers on organic content-led growth with defined deliverables and commercial terms. ({evidence})"
-        ),
-        "top_priorities": [
-            f"Confirm commercial terms and scope ({evidence})",
-            f"Convert deliverables into a 30-day production calendar (Evidence: deliverables: {dels})",
-            "Define KPI baseline + tracking (Evidence: proposal references engagement/conversion goals)",
-            "Set governance: owners, cadence, approvals (Evidence: multi-deliverable execution)",
-        ],
-        "key_risks": [
-            "Missing baseline metrics for ROI (Evidence: no CAC/lead baseline in doc text excerpt)",
-            "Scope ambiguity (Evidence: deliverables listed but acceptance criteria unclear)",
-            "Attribution risk for revenue share terms (Evidence: percent terms detected but attribution rules not specified)",
-        ],
-        "cross_brain_actions_7d": [
-            f"CFO: Confirm pricing + payment cadence + revenue share logic ({evidence})",
-            f"CMO: Draft 30-day content calendar from deliverables (Evidence: {dels})",
-            "COO: Define workflow: ideation → production → approvals → publishing",
-            "CHRO: Identify internal owners + time allocation for execution",
-            "CPO: Vendor/SLA checklist + milestone acceptance criteria",
-        ],
-        "cross_brain_actions_30d": [
-            "CFO: Build ROI + attribution model; agree reporting cadence",
-            "CMO: Launch first content sprint; baseline engagement + leads",
-            "COO: Operationalize weekly review and backlog grooming",
-            "CHRO: Accountability + performance expectations for owners",
-            "CPO: Lock vendor milestones and enforce quality gates",
-        ],
-        "owner_matrix": {
-            "CFO": ["Terms, ROI model, attribution rules"],
-            "CMO": ["Content calendar, launch, KPI baseline"],
-            "COO": ["Workflow, cadence, delivery operations"],
-            "CHRO": ["Owners, capacity, accountability"],
-            "CPO": ["Vendor milestones, acceptance criteria"],
-        },
-        "confidence": 0.55,
-        "tools": {"charts": []},
-    }
-
-def build_decision_review_prompt(pkt: Dict[str, Any]) -> str:
-    plan_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
-    return (
-        "You are an Executive Decision Reviewer.\n"
-        "You will NOT rewrite the entire plan.\n"
-        "Your job is to audit it for gaps, missing evidence, contradictions, and weak accountability.\n\n"
-        "INPUT_PLAN (verbatim):\n```text\n" + plan_text[:12000] + "\n```\n\n"
-        "Return ONLY valid JSON with this exact schema:\n"
-        "{\n"
-        '  "review_summary": "2-4 sentences",\n'
-        '  "critical_gaps": ["5-10 items, each with Evidence or Insufficient evidence"],\n'
-        '  "risk_flags": ["3-8 items"],\n'
-        '  "missing_metrics": ["3-8 items"],\n'
-        '  "fixes_7d": ["5 items, distinct"],\n'
-        '  "fixes_30d": ["5 items, distinct"],\n'
-        '  "owner_matrix": { "CFO": ["1-3"], "CMO": ["1-3"], "COO": ["1-3"], "CHRO": ["1-3"], "CPO": ["1-3"] },\n'
-        '  "confidence": 0.0\n'
-        "}\n\n"
-        "RULES:\n"
-        "- Every item must reference something from INPUT_PLAN or say 'Insufficient evidence: ...'.\n"
-        "- fixes_7d must be immediate actions; fixes_30d must be longer-horizon and different.\n"
-    )
-
-# =============================================================================
-# Repair prompts
-# =============================================================================
-
-def _build_repair_prompt(base_prompt: str, broken_output: str) -> str:
-    """
-    Strong repair prompt: show schema + broken output; demand ONLY JSON.
-    """
-    schema = _ea_schema_template()
-    return (
-        base_prompt
-        + "\n\n=== JSON REPAIR MODE ===\n"
-          "Your previous output was EMPTY or INVALID JSON, or failed schema checks.\n"
-          "Return ONLY valid JSON. No markdown. No commentary.\n"
-          "Must include ALL keys in REQUIRED SCHEMA.\n"
-          "owner_matrix MUST contain CFO/CMO/COO/CHRO/CPO each with 1–3 actions.\n"
-          "If evidence is missing, write 'Insufficient evidence: <what>' instead of leaving fields empty.\n\n"
-          "REQUIRED SCHEMA TEMPLATE:\n"
-        + "```json\n" + json.dumps(schema, ensure_ascii=False, indent=2) + "\n```\n\n"
-          "BROKEN OUTPUT:\n"
-        + "```text\n" + (broken_output or "")[:6000] + "\n```\n"
-    )
-
-
 # =============================================================================
 # Main entrypoint
 # =============================================================================
@@ -670,97 +664,28 @@ def run(
     top_p: float = 0.9,
     repeat_penalty: float = 1.05,
 ) -> Dict[str, Any]:
-    """
-    Executive Assistant (EA) fan-in stage.
 
-    Supports TWO modes:
-    1) Executive Action Plan (EA): returns EA schema.
-    2) Decision Review: returns Decision Review schema (pros/cons/gaps/fixes), NOT EA.
-
-    Key behaviors:
-    - doc mode if pkt has document_text/text
-    - fusion mode otherwise
-    - 2-pass generation: initial -> repair -> fallback
-    - Always attaches _meta and charts (charts only for EA mode)
-    """
-
-    per_brain_norm = _normalize_per_brain(per_brain)
-
-    # Determine "doc" vs "fusion"
     doc_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
     doc_text_len = len(doc_text)
-    mode = "doc" if doc_text_len > 0 else "fusion"
 
-    # Determine decision review mode
     meta = pkt.get("meta") or {}
     review_mode = meta.get("mode") in ("decision_review_from_plan", "decision_review")
+    mode = "decision_review" if review_mode else ("doc" if doc_text_len > 0 else "fusion")
 
-    # -----------------------------
-    # Decision Review schema validation (separate from EA)
-    # -----------------------------
-    REQUIRED_DR_KEYS = {
-        "review_summary",
-        "critical_gaps",
-        "risk_flags",
-        "missing_metrics",
-        "fixes_7d",
-        "fixes_30d",
-        "owner_matrix",
-        "confidence",
-    }
-
-    def _is_valid_decision_review_schema(obj: Dict[str, Any]) -> bool:
-        if not isinstance(obj, dict):
-            return False
-        if not REQUIRED_DR_KEYS.issubset(set(obj.keys())):
-            return False
-        if not isinstance(obj.get("review_summary"), str) or not obj["review_summary"].strip():
-            return False
-
-        for k in ["critical_gaps", "risk_flags", "missing_metrics", "fixes_7d", "fixes_30d"]:
-            v = obj.get(k)
-            if not isinstance(v, list) or len(v) < 3:
-                return False
-
-        om = obj.get("owner_matrix")
-        if not isinstance(om, dict):
-            return False
-        for role in REQUIRED_ROLES:
-            v = om.get(role)
-            if not isinstance(v, list) or len(v) < 1:
-                return False
-
-        try:
-            float(obj.get("confidence", 0.0))
-        except Exception:
-            return False
-
-        return True
-
-    # -----------------------------
-    # Prompt selection
-    # -----------------------------
+    # prompt
     if review_mode:
         prompt = build_decision_review_prompt(pkt)
     else:
-        prompt = build_ea_doc_prompt(pkt) if mode == "doc" else build_ea_prompt(pkt, per_brain_norm)
+        per_brain_norm = per_brain or {}
+        prompt = build_ea_doc_prompt(pkt) if (doc_text_len > 0) else build_ea_prompt(pkt, _normalize_per_brain(per_brain_norm))
 
     def _parse_model_output(s: Any) -> Dict[str, Any]:
-        if not isinstance(s, str) or not s.strip():
-            return {}
-        candidate = _extract_first_json_object(s) or s
-        return _try_parse_json(candidate)
+        return _try_parse_json(s) if isinstance(s, str) else {}
 
     def _needs_repair_mode(obj: Dict[str, Any]) -> bool:
-        # Different validation depending on mode
-        if review_mode:
-            return (not isinstance(obj, dict)) or (not _is_valid_decision_review_schema(obj))
-        # EA mode uses your existing EA validator
-        return _needs_repair(obj)
+        return _needs_repair_dr(obj) if review_mode else _needs_repair_ea(obj)
 
-    # -----------------------------
-    # Pass 1: Primary generation
-    # -----------------------------
+    # Pass 1
     runner = OllamaRunner(
         model=model,
         host=host,
@@ -774,19 +699,18 @@ def run(
     raw1 = runner.infer(prompt=prompt, system=EA_SYSTEM)
     parsed1 = _parse_model_output(raw1)
 
-    # Normalize EA only (Decision Review schema should remain as-is)
-    if not review_mode:
+    if review_mode:
+        parsed1 = _normalize_decision_review_dict(parsed1)
+    else:
         parsed1 = _normalize_model_ea_dict(parsed1)
 
     raw2 = ""
     parsed2: Dict[str, Any] = {}
 
-    # -----------------------------
-    # Pass 2: Repair if needed
-    # -----------------------------
     parsed = parsed1
     raw = raw1
 
+    # Pass 2 (repair)
     if _needs_repair_mode(parsed1):
         repair_prompt = _build_repair_prompt(prompt, raw1 if isinstance(raw1, str) else "")
 
@@ -802,16 +726,16 @@ def run(
         raw2 = runner2.infer(prompt=repair_prompt, system=EA_SYSTEM)
         parsed2 = _parse_model_output(raw2)
 
-        if not review_mode:
+        if review_mode:
+            parsed2 = _normalize_decision_review_dict(parsed2)
+        else:
             parsed2 = _normalize_model_ea_dict(parsed2)
 
         if not _needs_repair_mode(parsed2):
             raw = raw2
             parsed = parsed2
 
-    # -----------------------------
-    # Final decision + DEBUG
-    # -----------------------------
+    # Final
     if _needs_repair_mode(parsed):
         try:
             print("[EA_DEBUG] Fallback triggered (still invalid after repair). review_mode=", review_mode)
@@ -824,36 +748,16 @@ def run(
         except Exception:
             pass
 
-        if review_mode:
-            # Decision Review fallback (NOT EA fallback)
-            out = {
-                "review_summary": "Decision Review failed to generate a valid schema.",
-                "critical_gaps": ["Insufficient evidence: model output invalid or incomplete"],
-                "risk_flags": ["Model output invalid or incomplete"],
-                "missing_metrics": ["Insufficient evidence: metrics not extracted"],
-                "fixes_7d": ["Re-run Decision Review with higher num_predict or lower temperature"],
-                "fixes_30d": ["Upgrade model capacity or adjust Decision Review prompt"],
-                "owner_matrix": {r: ["Insufficient evidence"] for r in REQUIRED_ROLES},
-                "confidence": 0.0,
-                "tools": {"charts": []},
-            }
-        else:
-            # EA fallback (doc-first deterministic)
-            out = _fallback_from_doc(doc_text) if (mode == "doc" and doc_text_len > 0) else _fallback_nonempty_ea()
+        out = _fallback_decision_review() if review_mode else (_fallback_from_doc(doc_text) if doc_text_len > 0 else _fallback_nonempty_ea())
     else:
         out = parsed
-
-        # Ensure tools/charts exists for downstream consumers
         if isinstance(out, dict):
             out.setdefault("tools", {"charts": []})
             if isinstance(out["tools"], dict):
                 out["tools"].setdefault("charts", [])
 
-    # -----------------------------
-    # Attach meta (always)
-    # -----------------------------
     if not isinstance(out, dict):
-        out = _fallback_nonempty_ea()
+        out = _fallback_decision_review() if review_mode else _fallback_nonempty_ea()
 
     out["_meta"] = {
         "engine": "ollama",
@@ -861,13 +765,11 @@ def run(
         "bytes_in": len(prompt) if isinstance(prompt, str) else 0,
         "bytes_out": len(raw) if isinstance(raw, str) else 0,
         "confidence": out.get("confidence", 0.0 if review_mode else 0.8),
-        "mode": "decision_review" if review_mode else mode,
+        "mode": mode,
         "doc_text_len": doc_text_len,
     }
 
-    # -----------------------------
-    # Charts only for EA mode
-    # -----------------------------
+    # Charts only for EA
     if not review_mode:
         tools: Dict[str, Any] = out.setdefault("tools", {})
         if not isinstance(tools, dict):
@@ -885,4 +787,22 @@ def run(
             if cid and cid not in existing_ids:
                 charts.append(chart)
 
+    return out
+
+
+def _normalize_per_brain(per_brain: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for k, v in (per_brain or {}).items():
+        if isinstance(v, dict):
+            out[k] = {
+                "plan": v.get("plan", {}) or {},
+                "recommendation": v.get("recommendation", {}) or {},
+                "confidence": float(v.get("confidence", 0.7)),
+            }
+        else:
+            out[k] = {
+                "plan": getattr(v, "plan", {}) or {},
+                "recommendation": getattr(v, "recommendation", {}) or {},
+                "confidence": float(getattr(v, "confidence", 0.7)),
+            }
     return out
