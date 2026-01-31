@@ -480,30 +480,41 @@ def build_decision_review_prompt(pkt: Dict[str, Any]) -> str:
     plan_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
 
     schema = {
-        "review_summary": "2-4 sentences",
-        "critical_gaps": ["5-10 items"],
-        "risk_flags": ["3-8 items"],
-        "missing_metrics": ["3-8 items"],
-        "fixes_7d": ["3-8 items"],
-        "fixes_30d": ["3-8 items"],
+        "plan_summary": "2-4 sentences",
+        "critical_gaps": ["5-12 items"],
+        "missing_metrics": ["3-10 items"],
+        "risk_flags": ["3-10 items"],
+        "recommendation": {
+            "verdict": "GO | CAUTION | NO-GO",
+            "why": ["3-6 bullets"],
+            "next_steps": ["5 bullets (actionable)"],
+        },
         "owner_matrix": {r: ["1-3 actions"] for r in REQUIRED_ROLES},
         "confidence": "number between 0.5 and 0.9",
     }
 
     return (
         "You are an Executive Decision Reviewer.\n"
-        "You will NOT rewrite the plan. You will critique it.\n"
-        "Return ONLY valid JSON.\n\n"
+        "You will NOT rewrite the plan.\n"
+        "Your job is to evaluate feasibility and execution readiness.\n\n"
         "INPUT_PLAN (verbatim):\n```text\n"
         + plan_text[:14000]
         + "\n```\n\n"
-        "Return ONLY JSON with this exact schema (no extra keys):\n"
+        "Return ONLY valid JSON with this exact schema (no extra keys):\n"
         + json.dumps(schema, ensure_ascii=False, indent=2)
         + "\n\n"
         "RULES:\n"
-        "- Every item must reference something from INPUT_PLAN or say 'Insufficient evidence: ...'.\n"
-        "- fixes_7d must be immediate; fixes_30d must be longer-horizon and different.\n"
+        "- plan_summary must summarize the INPUT_PLAN in 2-4 sentences.\n"
+        "- critical_gaps must list gaps/unknowns that block confident execution.\n"
+        "- missing_metrics must list metrics required to judge success/ROI.\n"
+        "- risk_flags must list execution risks and failure modes.\n"
+        "- recommendation.verdict must be one of: GO, CAUTION, NO-GO.\n"
+        "- recommendation.why must explain the verdict based on gaps/metrics/risks.\n"
+        "- recommendation.next_steps must be concrete actions the user should take next.\n"
+        "- If evidence is missing, write 'Insufficient evidence: <what>'.\n"
+        "- confidence must be a number between 0.5 and 0.9.\n"
     )
+
 
 # =============================================================================
 # Repair prompt (generic)
