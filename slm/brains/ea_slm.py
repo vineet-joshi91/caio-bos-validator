@@ -487,7 +487,7 @@ def build_decision_review_prompt(pkt: Dict[str, Any]) -> str:
         "fixes_7d": ["3-8 items"],
         "fixes_30d": ["3-8 items"],
         "owner_matrix": {r: ["1-3 actions"] for r in REQUIRED_ROLES},
-        "confidence": 0.0,
+        "confidence": "number between 0.5 and 0.9",
     }
 
     return (
