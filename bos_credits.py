@@ -31,7 +31,7 @@ from wallet import (
     InsufficientCreditsError,
     DailyLimitReachedError,
 )
-from tier_config import TIER_CONFIG
+from tier_config import canonical_tier, get_tier_config
 
 
 def charge_bos_run(
@@ -58,8 +58,8 @@ def charge_bos_run(
         HTTPException 402 if insufficient credits
         HTTPException 429 if daily limit reached
     """
-    tier_key = (plan_tier or "demo").lower().strip()
-    cfg = TIER_CONFIG.get(tier_key, TIER_CONFIG["demo"])
+    tier_key = canonical_tier(plan_tier)
+    cfg = get_tier_config(tier_key)
 
     daily_cap = cfg.get("daily_doc_cap")        # int or None
     credits_required = cfg.get("credits_per_analysis", 10)

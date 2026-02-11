@@ -74,6 +74,23 @@ app.include_router(bos_auth_router, tags=["bos-auth"])
 PRIMARY_EA_MODEL = "qwen2.5:3b-instruct"
 FALLBACK_EA_MODEL = "qwen2.5:1.5b-instruct"
 
+def charge_or_pass(user_id: int, plan_tier: str | None, brain: str):
+    try:
+        db = SessionLocal()
+        charge_bos_run(db, user_id=user_id, plan_tier=plan_tier, brain=brain)
+        db.commit()
+    except InsufficientCreditsError as e:
+        raise HTTPException(status_code=402, detail=str(e))
+    except Exception:
+        # keep current behavior: charging failure should not block runs (for now)
+        pass
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
 # -------------------- Models --------------------
 class EARequest(BaseModel):
     packet: dict
