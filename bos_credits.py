@@ -31,7 +31,12 @@ from wallet import (
     InsufficientCreditsError,
     DailyLimitReachedError,
 )
-from tier_config import canonical_tier, get_tier_config
+try:
+    from tier_config import canonical_tier, get_tier_config
+except Exception:
+    canonical_tier = None
+    get_tier_config = None
+
 
 
 def charge_bos_run(
@@ -58,27 +63,46 @@ def charge_bos_run(
         HTTPException 402 if insufficient credits
         HTTPException 429 if daily limit reached
     """
-    tier_key = canonical_tier(plan_tier)
-    cfg = get_tier_config(tier_key)
-
-    daily_cap = cfg.get("daily_doc_cap")        # int or None
-    credits_required = cfg.get("credits_per_analysis", 10)
-
-    try:
-        consume_credits_and_record_usage(
-            db=db,
-            user_id=user_id,
-            credits_required=credits_required,
-            doc_increment=doc_increment,
-            reason=f"{brain}_run",
-            gateway="system",
-            metadata={"endpoint": "bos", "brain": brain, "tier": tier_key},
-            daily_doc_cap=daily_cap,
-        )
-        # DO NOT commit here – caller (endpoint) is responsible for db.commit()
-    except InsufficientCreditsError as e:
-        raise HTTPException(status_code=402, detail=str(e))
-    except DailyLimitReachedError as e:
-        raise HTTPException(status_code=429, detail=str(e))
-
-    return credits_required
+    tier_raw = (plan_tier or "demo").lower().strip()
+    # Canonicalize if helpers exist
+    if canonical_tier:
+        tier_key = canonical_tier(tier_raw)
+    else:
+        # Legacy mapping
+        if tier_raw == "standard":
+            tier_key = "demo"
+        elif tier_raw == "premium":
+            tier_key = "pro"
+        else:
+            tier_key = tier_raw
+    
+    # Get config if helper exists
+    if get_tier_config:
+        cfg = get_tier_config(tier_key)
+    else:
+        # Legacy fallback
+        from tier_config import TIER_CONFIG
+        cfg = TIER_CONFIG.get(tier_key, TIER_CONFIG.get("demo") or TIER_CONFIG.get("standard"))
+    
+    
+        daily_cap = cfg.get("daily_doc_cap")        # int or None
+        credits_required = cfg.get("credits_per_analysis", 10)
+    
+        try:
+            consume_credits_and_record_usage(
+                db=db,
+                user_id=user_id,
+                credits_required=credits_required,
+                doc_increment=doc_increment,
+                reason=f"{brain}_run",
+                gateway="system",
+                metadata={"endpoint": "bos", "brain": brain, "tier": tier_key},
+                daily_doc_cap=daily_cap,
+            )
+            # DO NOT commit here – caller (endpoint) is responsible for db.commit()
+        except InsufficientCreditsError as e:
+            raise HTTPException(status_code=402, detail=str(e))
+        except DailyLimitReachedError as e:
+            raise HTTPException(status_code=429, detail=str(e))
+    
+        return credits_required
