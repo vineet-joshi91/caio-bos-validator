@@ -69,7 +69,7 @@ app = FastAPI(title="CAIO BOS – EA API")
 # Wallet + Payments routers MUST be included first
 app.include_router(wallet_router)
 app.include_router(razorpay_webhook_router)
-app.include_router(bos_auth_router, tags=["bos-auth"])
+app.include_router(bos_auth_router, prefix="/bos-auth", tags=["bos-auth"])
 
 PRIMARY_EA_MODEL = "qwen2.5:3b-instruct"
 FALLBACK_EA_MODEL = "qwen2.5:1.5b-instruct"
