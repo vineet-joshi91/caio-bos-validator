@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
 import argparse, json, sys, os
+import logging
 from pathlib import Path
 from typing import Dict, Any
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------
 # Package-safe imports: works both as module and direct script
@@ -156,10 +160,14 @@ def main():
                 ea_json = {"executive_summary": str(ea_json)}
 
             ea_json = _ensure_meta(_to_jsonable(ea_json), ea_e)
+            logger.info(f"✅ EA generation completed successfully")  # ADD THIS LINE
             _print_json(ea_json)
             return
 
     except Exception as e:
+        # Log the error with full traceback
+        logger.error(f"❌ SLM execution failed: {type(e).__name__}: {e}", exc_info=True)
+        
         # Always emit JSON so the UI can show it in the EA Summary box
         err = {"ui": {"error": "SLM failed", "stdout": "", "stderr": f"{type(e).__name__}: {e}"}}
         _print_json(err)
