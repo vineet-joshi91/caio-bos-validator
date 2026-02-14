@@ -76,6 +76,59 @@ from bos_credits import charge_bos_run
 
 app = FastAPI(title="CAIO BOS – EA API")
 
+import requests
+from datetime import datetime
+from sqlalchemy import text
+
+@app.get("/health")
+async def health_check():
+    """Basic health check"""
+    return {
+        "status": "healthy",
+        "service": "CAIO BOS API",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+@app.get("/health/ollama")
+async def check_ollama():
+    """Check if Ollama is running and models are available"""
+    try:
+        response = requests.get("http://127.0.0.1:11434/api/tags", timeout=5)
+        if response.ok:
+            models = response.json().get("models", [])
+            model_names = [m["name"] for m in models]
+            
+            return {
+                "status": "healthy",
+                "ollama_running": True,
+                "available_models": model_names,
+                "primary_available": PRIMARY_EA_MODEL in model_names,
+                "fallback_available": FALLBACK_EA_MODEL in model_names
+            }
+    except Exception as e:
+        logger.error(f"Ollama health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "ollama_running": False,
+            "error": str(e)
+        }
+
+@app.get("/health/database")
+async def check_database():
+    """Check database connectivity"""
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        return {"status": "healthy", "database_connected": True}
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "database_connected": False,
+            "error": str(e)
+        }
+
 # Wallet + Payments routers MUST be included first
 app.include_router(wallet_router)
 app.include_router(razorpay_webhook_router)
