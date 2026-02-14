@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from wallet_api import router as wallet_router
 from webhooks_razorpay import router as razorpay_webhook_router
 from routes_bos_auth import router as bos_auth_router
+from middleware.security import SecurityHeadersMiddleware, RequestLoggingMiddleware
 
 import re
 import os
@@ -75,6 +76,9 @@ from tier_config import TIER_CONFIG
 from bos_credits import charge_bos_run
 
 app = FastAPI(title="CAIO BOS – EA API")
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
 
 import requests
 from datetime import datetime
