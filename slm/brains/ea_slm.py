@@ -442,7 +442,7 @@ def _fallback_from_doc(doc_text: str) -> Dict[str, Any]:
         if re.search(rf"\b{re.escape(kw)}\b", t, flags=re.IGNORECASE):
             deliverables.append(kw)
 
-    money_s = ", ".join(dict.fromkeys([m.strip() for m in money if m.strip()])[:3]) or "pricing not found"
+    money_s = ", ".join(list(dict.fromkeys([m.strip() for m in money if m.strip()]))[:3]) or "pricing not found"
     perc_s = ", ".join(dict.fromkeys([p.strip() for p in perc if p.strip()])[:3]) or "percent terms not found"
     dels_s = ", ".join(dict.fromkeys(deliverables)[:6]) or "deliverables unclear"
 
