@@ -38,7 +38,6 @@ except Exception:
     get_tier_config = None
 
 
-
 def charge_bos_run(
     db: Session,
     *,
@@ -49,21 +48,31 @@ def charge_bos_run(
 ) -> int:
     """
     Apply the BOS usage gate:
-
+    - ADMINS: Bypass all checks
     - Resolve tier config
     - Enforce daily doc cap (for demo)
     - Deduct credits
     - Update usage_daily
     - Insert credit_transactions row
-
     Returns:
         credits_used (int) if successful.
-
     Raises:
         HTTPException 402 if insufficient credits
         HTTPException 429 if daily limit reached
     """
+    # ADMIN BYPASS - Check if user is admin
+    from routes_bos_auth import User
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if user and user.is_admin:
+        logger.info(f"🔓 Admin user {user_id} ({user.email}) - all credit checks bypassed")
+        return 0  # Return 0 credits used for admin
+    
+    # Regular user - apply normal credit checks
     tier_raw = (plan_tier or "demo").lower().strip()
+    
     # Canonicalize if helpers exist
     if canonical_tier:
         tier_key = canonical_tier(tier_raw)
@@ -84,25 +93,24 @@ def charge_bos_run(
         from tier_config import TIER_CONFIG
         cfg = TIER_CONFIG.get(tier_key, TIER_CONFIG.get("demo") or TIER_CONFIG.get("standard"))
     
+    daily_cap = cfg.get("daily_doc_cap")        # int or None
+    credits_required = cfg.get("credits_per_analysis", 10)
     
-        daily_cap = cfg.get("daily_doc_cap")        # int or None
-        credits_required = cfg.get("credits_per_analysis", 10)
+    try:
+        consume_credits_and_record_usage(
+            db=db,
+            user_id=user_id,
+            credits_required=credits_required,
+            doc_increment=doc_increment,
+            reason=f"{brain}_run",
+            gateway="system",
+            metadata={"endpoint": "bos", "brain": brain, "tier": tier_key},
+            daily_doc_cap=daily_cap,
+        )
+        # DO NOT commit here – caller (endpoint) is responsible for db.commit()
+    except InsufficientCreditsError as e:
+        raise HTTPException(status_code=402, detail=str(e))
+    except DailyLimitReachedError as e:
+        raise HTTPException(status_code=429, detail=str(e))
     
-        try:
-            consume_credits_and_record_usage(
-                db=db,
-                user_id=user_id,
-                credits_required=credits_required,
-                doc_increment=doc_increment,
-                reason=f"{brain}_run",
-                gateway="system",
-                metadata={"endpoint": "bos", "brain": brain, "tier": tier_key},
-                daily_doc_cap=daily_cap,
-            )
-            # DO NOT commit here – caller (endpoint) is responsible for db.commit()
-        except InsufficientCreditsError as e:
-            raise HTTPException(status_code=402, detail=str(e))
-        except DailyLimitReachedError as e:
-            raise HTTPException(status_code=429, detail=str(e))
-    
-        return credits_required
+    return credits_required
