@@ -1045,15 +1045,16 @@ async def upload_and_ea(
     
     # Charge credits before processing
     try:
-        charge_or_pass(user_id=user_id, plan_tier=plan_tier, brain="ea")
+        effective_tier = "premium" if current_user.is_admin else plan_tier
+        logger.info(f"📤 Upload from user {user_id} (tier: {plan_tier}, admin: {current_user.is_admin})")
+        charge_or_pass(user_id=user_id, plan_tier=effective_tier, brain="ea")
     except HTTPException as e:
         if e.status_code == 402:
             logger.warning(f"❌ User {user_id} insufficient credits")
         raise
     
     model = PRIMARY_EA_MODEL
-    # ... rest of code stays exactly the same
-        
+            
     # JSON packet path (backward compatible)
     if filename.lower().endswith(".json"):
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="wb") as tf:

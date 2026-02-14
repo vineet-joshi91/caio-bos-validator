@@ -1,64 +1,72 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Dec  1 19:56:48 2025
-
-@author: Vineet
-"""
-
 # tier_config.py
 # -*- coding: utf-8 -*-
 """
 Central configuration for CAIO usage tiers.
-
 Used by bos_credits.py → charge_bos_run()
 
-Field meanings:
-- credits_per_analysis: how many credits to deduct per BOS/EA run.
-- daily_doc_cap: max documents per day (None = unlimited).
+CAIO has TWO tiers:
+1. STANDARD (free tier with credit refills)
+   - Can see: Execution Plan only
+   - Decision Review: hidden behind paywall
+   - Limited free credits, can buy more
+
+2. PREMIUM (paid subscription)
+   - Can see: Both Execution Plan AND Decision Review
+   - Lower per-analysis cost
+   - Unlimited daily documents
 """
 
 TIER_CONFIG = {
     # --------------------------------------------------------
-    # Free Demo Tier (default if no plan_tier is provided)
+    # STANDARD Tier (default free tier)
     # --------------------------------------------------------
-    "demo": {
-        "credits_per_analysis": 10,    # EA/BOS analysis cost
-        "daily_doc_cap": 3,            # only 3 documents/day allowed
+    "standard": {
+        "credits_per_analysis": 10,    # Cost per EA run
+        "daily_doc_cap": 10,           # 10 documents/day
+        "can_see_decision_review": False,  # Hidden feature
+        "display_name": "Standard",
     },
-
+    
     # --------------------------------------------------------
-    # Pro Tier (paid)
-    # --------------------------------------------------------
-    "pro": {
-        "credits_per_analysis": 10,    # Same BOS cost, higher freedom
-        "daily_doc_cap": None,         # No daily limit
-    },
-
-    # --------------------------------------------------------
-    # Premium Tier (paid)
+    # PREMIUM Tier (paid subscription)
     # --------------------------------------------------------
     "premium": {
-        "credits_per_analysis": 5,     # Cheaper per-run cost
-        "daily_doc_cap": None,
-    },
-
-    # --------------------------------------------------------
-    # Enterprise Tier (custom)
-    # --------------------------------------------------------
-    "enterprise": {
-        "credits_per_analysis": 1,     # Essentially unlimited use
-        "daily_doc_cap": None,
+        "credits_per_analysis": 5,     # Cheaper per-run (50% off)
+        "daily_doc_cap": None,         # Unlimited documents
+        "can_see_decision_review": True,   # Full access
+        "display_name": "Premium",
     },
 }
 
+# Aliases for backward compatibility
+TIER_CONFIG["free"] = TIER_CONFIG["standard"]  # Legacy name
+TIER_CONFIG["demo"] = TIER_CONFIG["standard"]  # Legacy name
+TIER_CONFIG["pro"] = TIER_CONFIG["premium"]    # Legacy name
 
-def get_tier_config(tier_name: str) -> dict:
+def get_tier_config(tier_name: str, is_admin: bool = False) -> dict:
     """
     Safely return tier configuration.
-    Falls back to DEMO tier if unknown or None.
+    Admins get premium features regardless of tier.
+    Falls back to STANDARD tier if unknown or None.
     """
+    # Admins always get premium config
+    if is_admin:
+        return TIER_CONFIG["premium"]
+    
     if not tier_name:
-        return TIER_CONFIG["demo"]
-
+        return TIER_CONFIG["standard"]
+    
     tier_key = tier_name.lower().strip()
-    return TIER_CONFIG.get(tier_key, TIER_CONFIG["demo"])
+    return TIER_CONFIG.get(tier_key, TIER_CONFIG["standard"])
+
+def can_access_decision_review(tier_name: str, is_admin: bool = False) -> bool:
+    """
+    Check if user's tier allows Decision Review feature.
+    Admins always have access.
+    Returns: True if premium or admin, False otherwise
+    """
+    if is_admin:
+        return True
+    
+    config = get_tier_config(tier_name)
+    return config.get("can_see_decision_review", False)
