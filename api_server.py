@@ -15,6 +15,16 @@ from webhooks_razorpay import router as razorpay_webhook_router
 from routes_bos_auth import router as bos_auth_router
 
 import re
+import os
+from dotenv import load_dotenv
+from logging_config import setup_logging
+
+load_dotenv()
+
+DEBUG = os.getenv("DEBUG", "0") == "1"
+logger = setup_logging(debug=DEBUG)
+
+logger.info("🚀 CAIO BOS API Server starting...")
 
 try:
     from pypdf import PdfReader
@@ -1071,6 +1081,3 @@ async def upload_and_ea(
         ui_obj["warnings"].extend(packet["meta"].get("warnings", []))
         ui_obj["extract_meta"] = extract_meta
     return {"ui": ui_obj}
-
-    
-    
