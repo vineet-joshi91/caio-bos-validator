@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 from wallet_api import router as wallet_router
 from webhooks_razorpay import router as razorpay_webhook_router
 from routes_bos_auth import router as bos_auth_router
+from routes_bos_auth import get_current_user, User
 from middleware.security import SecurityHeadersMiddleware, RequestLoggingMiddleware
+from db import get_db
 
 import re
 import os
@@ -1018,25 +1020,40 @@ def run_brain(payload: BrainRequest):
         return {"ui": out}
     return out
 
+from routes_bos_auth import get_current_user
+
 @app.post("/upload-and-ea")
 async def upload_and_ea(
     file: UploadFile = File(...),
     timeout_sec: int = 300,
     num_predict: int = 512,
     model: Optional[str] = None,
+    current_user: User = Depends(get_current_user),  # ADD THIS - automatically validates JWT
+    db: Session = Depends(get_db),  # ADD THIS - for database access
 ):
     """
     Upload a file and run EA.
-
-    - If file is JSON: treat as BOS/validator packet JSON (existing behavior).
-    - Else: extract readable text and wrap it into a packet JSON for EA.
-
-    Returns: {"ui": ...} compatible with BOSSummary.
     """
+    # Get user info from authenticated user
+    user_id = current_user.id
+    plan_tier = "premium" if current_user.is_paid else "free"
+    
     filename = file.filename or "upload"
+    logger.info(f"📤 Upload from user {user_id} ({current_user.email}), file: {filename}, tier: {plan_tier}")
+    
     raw = await file.read()
-    model=PRIMARY_EA_MODEL
-
+    
+    # Charge credits before processing
+    try:
+        charge_or_pass(user_id=user_id, plan_tier=plan_tier, brain="ea")
+    except HTTPException as e:
+        if e.status_code == 402:
+            logger.warning(f"❌ User {user_id} insufficient credits")
+        raise
+    
+    model = PRIMARY_EA_MODEL
+    # ... rest of code stays exactly the same
+        
     # JSON packet path (backward compatible)
     if filename.lower().endswith(".json"):
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="wb") as tf:
