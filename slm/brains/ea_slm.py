@@ -444,7 +444,7 @@ def _fallback_from_doc(doc_text: str) -> Dict[str, Any]:
 
     money_s = ", ".join(list(dict.fromkeys([m.strip() for m in money if m.strip()]))[:3]) or "pricing not found"
     perc_s = ", ".join(list(dict.fromkeys([p.strip() for p in perc if p.strip()]))[:3]) or "percent terms not found"
-    dels_s = ", ".join(dict.fromkeys(deliverables)[:6]) or "deliverables unclear"
+    dels_s = ", ".join(list(dict.fromkeys(deliverables))[:6]) or "deliverables unclear"
 
     evidence = f"Evidence: {money_s}; {perc_s}; deliverables: {dels_s}. Preview: {preview}"
 
