@@ -142,15 +142,22 @@ PRIMARY_EA_MODEL = "qwen2.5:3b-instruct"
 FALLBACK_EA_MODEL = "qwen2.5:1.5b-instruct"
 
 def charge_or_pass(user_id: int, plan_tier: str | None, brain: str):
+    """
+    Attempt to charge credits for a BOS run.
+    Logs failures but doesn't block execution.
+    """
     try:
         db = SessionLocal()
         charge_bos_run(db, user_id=user_id, plan_tier=plan_tier, brain=brain)
         db.commit()
+        logger.info(f"✅ Charged user {user_id} for {brain} analysis")
     except InsufficientCreditsError as e:
+        logger.warning(f"⚠️  User {user_id} insufficient credits: {e}")
         raise HTTPException(status_code=402, detail=str(e))
-    except Exception:
-        # keep current behavior: charging failure should not block runs (for now)
-        pass
+    except Exception as e:
+        # Log the error but allow the run to continue
+        logger.error(f"❌ Failed to charge user {user_id}: {e}", exc_info=True)
+        # Don't raise - let the analysis proceed
     finally:
         try:
             db.close()
