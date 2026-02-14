@@ -16,6 +16,7 @@ from routes_bos_auth import router as bos_auth_router
 from routes_bos_auth import get_current_user, User
 from middleware.security import SecurityHeadersMiddleware, RequestLoggingMiddleware
 from db import get_db
+from api.services.document_service import extract_text_with_meta
 
 import re
 import os
@@ -28,39 +29,6 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 logger = setup_logging(debug=DEBUG)
 
 logger.info("🚀 CAIO BOS API Server starting...")
-
-try:
-    from pypdf import PdfReader
-except Exception:
-    PdfReader = None  # type: ignore
-
-try:
-    import docx  # python-docx
-except Exception:
-    docx = None  # type: ignore
-
-try:
-    import openpyxl
-except Exception:
-    openpyxl = None  # type: ignore
-
-import csv
-
-try:
-    import pdfplumber
-except Exception:
-    pdfplumber = None
-
-try:
-    import pytesseract
-except Exception:
-    pytesseract = None
-
-try:
-    from PIL import Image
-except Exception:
-    Image = None
-
 
 from wallet import (
     CreditWallet,
