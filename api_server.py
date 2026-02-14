@@ -227,3 +227,285 @@ def run_slm(
             "stdout": "",
             "stderr": str(e),
         }
+    
+# -------------------- Routes --------------------
+@app.get("/")
+def root():
+    return {"ok": True, "service": "caio-bos"}
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+@app.get("/welcome")
+def welcome():
+    return {"ok": True, "message": "Welcome to CAIO BOS"}
+
+@app.post("/run-ea")
+def run_ea(payload: EARequest):
+    # --- Guard: prevent empty Decision Review packets (avoid timeouts / fluff) ---
+    pkt = payload.packet or {}
+
+    findings = pkt.get("findings") or []
+    insights_map = pkt.get("insights") or {}
+    document_text = (pkt.get("document_text") or pkt.get("text") or "").strip()
+
+    has_insights = False
+    if isinstance(insights_map, dict):
+        for b in ["cfo", "cmo", "coo", "chro", "cpo", "ea"]:
+            if insights_map.get(b):
+                has_insights = True
+                break
+    else:
+        has_insights = bool(insights_map)
+
+    if (not findings) and (not has_insights) and (not document_text):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Decision Review requires findings/insights or document_text. "
+                "Upload a file (Analyze) or provide a populated validator packet."
+            ),
+        )
+
+    # --- Charge credits (if configured) ---
+    try:
+        charge_bos_run(payload.user_id, payload.plan_tier)
+    except InsufficientCreditsError as e:
+        raise HTTPException(status_code=402, detail=str(e))
+    except Exception:
+        # If charging fails, still allow run; tighten later if you want
+        pass
+
+    # --- Save packet to temp file ---
+    with tempfile.NamedTemporaryFile(
+        suffix=".json", delete=False, mode="w", encoding="utf-8"
+    ) as tf:
+        json.dump(payload.packet, tf, ensure_ascii=False, indent=2)
+        tmp_in = tf.name
+
+    # --- Single-model policy: Primary + Fallback ---
+    primary_model = "qwen2.5:3b-instruct"
+    fallback_model = "qwen2.5:1.5b-instruct"
+
+    # Use request overrides if you ever want later; for now enforce primary
+    # (keeps behavior stable and prevents accidental weak models)
+    timeout_sec = payload.timeout_sec
+    num_predict = payload.num_predict
+
+    # --- Run primary ---
+    out = run_slm(
+        tmp_in,
+        "ea",
+        model=primary_model,
+        timeout_sec=timeout_sec,
+        num_predict=num_predict,
+    )
+
+    # Detect failure (either top-level error or ui.error)
+    ui_obj = out.get("ui") if isinstance(out, dict) else None
+    is_fail = (
+        (not isinstance(out, dict))
+        or (isinstance(out, dict) and out.get("error"))
+        or (isinstance(ui_obj, dict) and ui_obj.get("error"))
+    )
+
+    # --- If primary failed, retry once with fallback ---
+    if is_fail:
+        out2 = run_slm(
+            tmp_in,
+            "ea",
+            model=fallback_model,
+            timeout_sec=timeout_sec,
+            num_predict=num_predict,
+        )
+        out = out2
+
+    # --- Final safety: never return None / invalid types ---
+    if out is None:
+        return {"ui": {"error": "Empty response from run_slm", "stdout": "", "stderr": ""}}
+
+    if not isinstance(out, dict):
+        return {"ui": {"error": "Invalid response type from run_slm", "stdout": "", "stderr": str(out)}}
+
+    # If run_slm returned {"error": "..."} without ui wrapper, wrap it
+    if "error" in out and "ui" not in out:
+        return {"ui": out}
+
+    return out
+
+
+
+
+@app.post("/run-brain")
+def run_brain(payload: BrainRequest):
+    # Charge credits (if configured)
+    try:
+        charge_bos_run(payload.user_id, payload.plan_tier)
+    except InsufficientCreditsError as e:
+        raise HTTPException(status_code=402, detail=str(e))
+    except Exception:
+        pass
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w", encoding="utf-8") as tf:
+        json.dump(payload.packet, tf, ensure_ascii=False, indent=2)
+        tmp_in = tf.name
+
+    out = run_slm(
+        tmp_in,
+        payload.brain,
+        model=payload.model,
+        timeout_sec=payload.timeout_sec,
+        num_predict=payload.num_predict,
+    )
+    if "error" in out and "ui" not in out:
+        return {"ui": out}
+    return out
+
+from routes_bos_auth import get_current_user
+
+@app.post("/upload-and-ea")
+async def upload_and_ea(
+    file: UploadFile = File(...),
+    timeout_sec: int = 300,
+    num_predict: int = 512,
+    model: Optional[str] = None,
+    current_user: User = Depends(get_current_user),  # ADD THIS - automatically validates JWT
+    db: Session = Depends(get_db),  # ADD THIS - for database access
+):
+    """
+    Upload a file and run EA.
+    """
+    # Get user info from authenticated user
+    # Get user info
+    user_id = current_user.id
+    plan_tier = get_user_tier(current_user)
+    filename = file.filename or "upload"
+        
+    # Log the upload
+    log_user_action(
+        current_user, 
+        "upload", 
+        {"filename": filename, "tier": plan_tier, "admin": current_user.is_admin}
+    )
+        
+    raw = await file.read()
+        
+    # Charge credits before processing
+    try:
+        charge_or_pass(user_id=user_id, plan_tier=plan_tier, brain="ea")
+    except HTTPException as e:
+        if e.status_code == 402:
+            logger.warning(f"❌ User {user_id} insufficient credits")
+        raise
+    
+    model = PRIMARY_EA_MODEL
+            
+    # JSON packet path (backward compatible)
+    if filename.lower().endswith(".json"):
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="wb") as tf:
+            tf.write(raw)
+            tmp_in = tf.name
+        out = run_slm(
+            tmp_in,
+            "ea",
+            model=model,
+            timeout_sec=timeout_sec,
+            num_predict=num_predict,
+        )
+        if "error" in out and "ui" not in out:
+            return {"ui": out}
+        return {"ui": out.get("ui") or out}
+
+    # Document path (PDF/DOCX/TXT/other)
+    text, extract_meta = extract_text_with_meta(filename, raw)
+    
+    print(
+    f"[UPLOAD] filename={filename} "
+    f"len={len(text)} "
+    f"preview={text[:200]!r}"
+)
+
+    print(f"[EXTRACT] chosen={extract_meta.get('chosen_method')} flags={extract_meta.get('quality_flags')}")
+
+    if not text or len(text.strip()) < 20:
+        return {
+            "ui": {
+                "error": "No readable text extracted from upload",
+                "stdout": "",
+                "stderr": "",
+            }
+        }
+
+    # Wrap extracted text into a packet JSON for EA
+    packet: Dict[str, Any] = {
+        "label": "Uploaded Document",
+        "source": {
+            "filename": filename,
+            "content_type": file.content_type,
+            "size_bytes": len(raw),
+        },
+        "document_text": text[:200000],  # safety cap
+        "facts": {},
+        "meta": {"ingest": "upload-and-ea"},
+    }
+    
+    packet["meta"]["doc_text_len"] = len(text)
+    packet["meta"]["doc_text_preview"] = text[:400]
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w", encoding="utf-8") as tf:
+        json.dump(packet, tf, ensure_ascii=False, indent=2)
+        tmp_in = tf.name
+
+    out = run_slm(
+        tmp_in,
+        "ea",
+        model=PRIMARY_EA_MODEL,
+        timeout_sec=timeout_sec,
+        num_predict=num_predict,
+    )
+    
+    # If primary fails, retry once with fallback model
+    ui_obj = out.get("ui") if isinstance(out, dict) else None
+    is_fail = (
+        (isinstance(out, dict) and out.get("error"))
+        or (isinstance(ui_obj, dict) and ui_obj.get("error"))
+    )
+    if is_fail:
+        out2 = run_slm(
+            tmp_in,
+            "ea",
+            model=FALLBACK_EA_MODEL,
+            timeout_sec=timeout_sec,
+            num_predict=num_predict,
+        )
+        out = out2
+
+    
+    # Attach extraction metadata
+    packet["meta"]["extract"] = extract_meta
+    
+    # Build warnings for UI
+    warnings = []
+    flags = extract_meta.get("quality_flags") or []
+    if "LIKELY_QUOTE_PRICING_NOT_EXTRACTED" in flags:
+        warnings.append(
+            "Pricing/quotation terms may be embedded as an image/table and were not extracted reliably. "
+            "Upload the quotation as XLSX/CSV or a text-based PDF, or upload the quotation pages separately."
+        )
+    elif "LOW_TEXT_PDF" in flags:
+        warnings.append(
+            "This PDF contains limited extractable text (possibly scanned or table-heavy). "
+            "Results may be incomplete; consider uploading a text-based PDF or an XLSX/CSV version."
+        )
+    
+    packet["meta"]["warnings"] = warnings
+    
+    if "error" in out and "ui" not in out:
+        return {"ui": out}
+    ui_obj = out.get("ui") or out
+    if isinstance(ui_obj, dict):
+        ui_obj.setdefault("warnings", [])
+        ui_obj["warnings"].extend(packet["meta"].get("warnings", []))
+        ui_obj["extract_meta"] = extract_meta
+    return {"ui": ui_obj}
