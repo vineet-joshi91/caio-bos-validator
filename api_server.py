@@ -368,7 +368,7 @@ from routes_bos_auth import get_current_user
 async def upload_and_ea(
     file: UploadFile = File(...),
     timeout_sec: int = 300,
-    num_predict: int = 512,
+    num_predict: int = 256,
     model: Optional[str] = None,
     current_user: User = Depends(get_current_user),  # ADD THIS - automatically validates JWT
     db: Session = Depends(get_db),  # ADD THIS - for database access
@@ -409,9 +409,9 @@ async def upload_and_ea(
         out = run_slm(
             tmp_in,
             "ea",
-            model=model,
+            model=PRIMARY_EA_MODEL,
             timeout_sec=timeout_sec,
-            num_predict=num_predict,
+            num_predict=None,
         )
         if "error" in out and "ui" not in out:
             return {"ui": out}
