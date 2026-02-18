@@ -90,7 +90,22 @@ def main():
         pkt = _read_json(Path(args.input))
 
         def eff_for(brain: str) -> dict:
-            e = get_brain_effective(cfg, brain)
+            # Check if this is a Decision Review run
+            meta = pkt.get("meta") or {}
+            is_dr = meta.get("mode") in ("decision_review_from_plan", "decision_review")
+            
+            # Use lighter config for Decision Review
+            if is_dr and "decision_review" in cfg and brain in cfg["decision_review"]:
+                e = cfg["decision_review"][brain].copy()
+                e["host"] = cfg["defaults"]["base_url"]
+                e["engine"] = cfg["defaults"]["engine"]
+                e["temperature"] = cfg["defaults"].get("temperature", 0.2)
+                e["top_p"] = cfg["defaults"].get("top_p", 0.9)
+                e["repeat_penalty"] = cfg["defaults"].get("repeat_penalty", 1.05)
+                e["model"] = e.pop("model_path", e.get("model"))
+            else:
+                e = get_brain_effective(cfg, brain)
+            
             if args.model:       e["model"] = args.model
             if args.timeout:     e["timeout_sec"] = int(args.timeout)
             if args.num_predict: e["num_predict"] = int(args.num_predict)

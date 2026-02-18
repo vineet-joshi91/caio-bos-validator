@@ -32,3 +32,30 @@ brains:
     model_path: qwen2.5:1.5b-instruct
     num_predict: 128  # Reduced from 192
     timeout_sec: 60   # Reduced from 90
+
+# Decision Review - optimized for speed (free tier sample)
+decision_review:
+  cfo:
+    model_path: qwen2.5:0.5b-instruct
+    num_predict: 64
+    timeout_sec: 45
+  cmo:
+    model_path: qwen2.5:0.5b-instruct
+    num_predict: 48
+    timeout_sec: 30
+  coo:
+    model_path: qwen2.5:0.5b-instruct
+    num_predict: 48
+    timeout_sec: 30
+  chro:
+    model_path: qwen2.5:0.5b-instruct
+    num_predict: 48
+    timeout_sec: 30
+  cpo:
+    model_path: qwen2.5:0.5b-instruct
+    num_predict: 48
+    timeout_sec: 30
+  ea:
+    model_path: qwen2.5:0.5b-instruct
+    num_predict: 96
+    timeout_sec: 45
