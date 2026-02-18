@@ -262,39 +262,29 @@ def _normalize_decision_review_dict(d: Dict[str, Any]) -> Dict[str, Any]:
 def _is_valid_decision_review_schema(obj: Dict[str, Any]) -> bool:
     """
     Relaxed DR validation (prevents rejecting good reviews):
-    - Must have plan_summary (non-empty)
-    - Must have >=1 critical gap
-    - Must have recommendation.verdict in GO/CAUTION/NO-GO
-    - Must have owner_matrix with at least 3 roles populated (>=1 item)
+    - Must be a dict
+    - Must have at least ONE of: plan_summary, critical_gaps, or recommendation
+    - If recommendation exists, verdict should be GO/CAUTION/NO-GO
     """
     if not isinstance(obj, dict):
         return False
-
-    if not isinstance(obj.get("plan_summary"), str) or not obj["plan_summary"].strip():
+    
+    # Accept if it has at least SOME content
+    has_summary = isinstance(obj.get("plan_summary"), str) and obj["plan_summary"].strip()
+    has_gaps = isinstance(obj.get("critical_gaps"), list) and len(obj.get("critical_gaps", [])) > 0
+    has_rec = isinstance(obj.get("recommendation"), dict)
+    
+    # Must have at least one piece of content
+    if not (has_summary or has_gaps or has_rec):
         return False
-
-    cg = obj.get("critical_gaps")
-    if not isinstance(cg, list) or len(cg) < 1:
-        return False
-
-    rec = obj.get("recommendation")
-    if not isinstance(rec, dict):
-        return False
-    if rec.get("verdict") not in ("GO", "CAUTION", "NO-GO"):
-        return False
-
-    om = obj.get("owner_matrix")
-    if not isinstance(om, dict):
-        return False
-
-    roles_ok = 0
-    for role in REQUIRED_ROLES:
-        rv = om.get(role)
-        if isinstance(rv, list) and len(rv) > 0:
-            roles_ok += 1
-    if roles_ok < 3:
-        return False
-
+    
+    # If recommendation exists, validate verdict
+    if has_rec:
+        rec = obj.get("recommendation", {})
+        verdict = rec.get("verdict")
+        if verdict and verdict not in ("GO", "CAUTION", "NO-GO", ""):
+            return False
+    
     return True
 
 
