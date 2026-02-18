@@ -399,7 +399,7 @@ async def upload_and_ea(
             logger.warning(f"❌ User {user_id} insufficient credits")
         raise
     
-    model = PRIMARY_EA_MODEL
+    model = None
             
     # JSON packet path (backward compatible)
     if filename.lower().endswith(".json"):
@@ -409,7 +409,7 @@ async def upload_and_ea(
         out = run_slm(
             tmp_in,
             "ea",
-            model=PRIMARY_EA_MODEL,
+            model=None,
             timeout_sec=timeout_sec,
             num_predict=None,
         )
@@ -460,7 +460,7 @@ async def upload_and_ea(
     out = run_slm(
         tmp_in,
         "ea",
-        model=PRIMARY_EA_MODEL,
+        model=None,
         timeout_sec=timeout_sec,
         num_predict=num_predict,
     )
