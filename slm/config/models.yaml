@@ -10,30 +10,25 @@ defaults:
 brains:
   cfo:
     model_path: qwen2.5:1.5b-instruct
-    num_predict: 192
-    timeout_sec: 120
-
+    num_predict: 128  # Reduced from 192
+    timeout_sec: 90   # Reduced from 120
   cmo:
     model_path: qwen2.5:0.5b-instruct
-    num_predict: 160
-    timeout_sec: 90
-
+    num_predict: 96   # Reduced from 160
+    timeout_sec: 60   # Reduced from 90
   coo:
     model_path: qwen2.5:0.5b-instruct
-    num_predict: 160
-    timeout_sec: 90
-
+    num_predict: 96   # Reduced from 160
+    timeout_sec: 60   # Reduced from 90
   chro:
     model_path: qwen2.5:0.5b-instruct
-    num_predict: 160
-    timeout_sec: 90
-
+    num_predict: 96   # Reduced from 160
+    timeout_sec: 60   # Reduced from 90
   cpo:
     model_path: qwen2.5:0.5b-instruct
-    num_predict: 160
-    timeout_sec: 90
-
+    num_predict: 96   # Reduced from 160
+    timeout_sec: 60   # Reduced from 90
   ea:
     model_path: qwen2.5:1.5b-instruct
-    num_predict: 256
-    timeout_sec: 120
+    num_predict: 192  # Reduced from 256
+    timeout_sec: 90   # Reduced from 120
