@@ -71,7 +71,7 @@ def add_credit_packs():
     print("\n✅ All credit packs added successfully!")
     print("\nPacks in database:")
     
-    all_packs = db.query(CreditPack).filter(CreditPack.is_active == 1).all()
+    all_packs = db.query(CreditPack).filter(CreditPack.is_active == True).all()
     for p in all_packs:
         print(f"  - {p.display_name}: {p.credits} credits for ₹{p.amount_minor_units / 100:.2f}")
 
