@@ -519,7 +519,7 @@ async def initiate_credit_topup(
     # Find the pack
     credit_pack = db.query(CreditPack).filter(
         CreditPack.pack_id == pack,
-        CreditPack.is_active == 1
+        CreditPack.is_active == True
     ).first()
     
     if not credit_pack:
