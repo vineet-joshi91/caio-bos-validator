@@ -243,8 +243,24 @@ async def razorpay_webhook(
             db.commit()
             return {"status": "amount_currency_check_failed", "event": event, "order_id": order_id}
 
-    # 6) Find pack
-    pack = db.query(CreditPack).filter(CreditPack.pack_id == record.pack_id).first()
+    # 6) Find pack - first try pack_id, then fall back to amount matching
+    pack = None
+    
+    # Try to find by pack_id first (if available)
+    if record.pack_id:
+        pack = db.query(CreditPack).filter(CreditPack.pack_id == record.pack_id).first()
+    
+    # If no pack found and we have amount/currency, match by amount
+    if not pack and amount and currency:
+        try:
+            pack = db.query(CreditPack).filter(
+                CreditPack.amount_minor_units == int(amount),
+                CreditPack.currency == str(currency).upper(),
+                CreditPack.is_active == 1
+            ).first()
+        except Exception as e:
+            print(f"Error matching pack by amount: {e}")
+    
     if not pack:
         record.status = "pack_not_found"
         meta = _get_record_metadata(record)
