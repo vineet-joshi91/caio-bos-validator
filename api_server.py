@@ -1,4 +1,4 @@
-# api_server.py — drop-in replacement
+# api_server.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -233,10 +233,6 @@ def run_slm(
 def root():
     return {"ok": True, "service": "caio-bos"}
 
-@app.get("/health")
-def health():
-    return {"ok": True}
-
 @app.get("/welcome")
 def welcome():
     return {"ok": True, "message": "Welcome to CAIO BOS"}
@@ -335,8 +331,6 @@ def run_ea(payload: EARequest):
     return out
 
 
-
-
 @app.post("/run-brain")
 def run_brain(payload: BrainRequest):
     # Charge credits (if configured)
@@ -362,7 +356,6 @@ def run_brain(payload: BrainRequest):
         return {"ui": out}
     return out
 
-from routes_bos_auth import get_current_user
 
 @app.post("/upload-and-ea")
 async def upload_and_ea(
@@ -370,13 +363,12 @@ async def upload_and_ea(
     timeout_sec: int = 300,
     num_predict: int = 256,
     model: Optional[str] = None,
-    current_user: User = Depends(get_current_user),  # ADD THIS - automatically validates JWT
-    db: Session = Depends(get_db),  # ADD THIS - for database access
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Upload a file and run EA.
     """
-    # Get user info from authenticated user
     # Get user info
     user_id = current_user.id
     plan_tier = get_user_tier(current_user)
@@ -421,10 +413,10 @@ async def upload_and_ea(
     text, extract_meta = extract_text_with_meta(filename, raw)
     
     print(
-    f"[UPLOAD] filename={filename} "
-    f"len={len(text)} "
-    f"preview={text[:200]!r}"
-)
+        f"[UPLOAD] filename={filename} "
+        f"len={len(text)} "
+        f"preview={text[:200]!r}"
+    )
 
     print(f"[EXTRACT] chosen={extract_meta.get('chosen_method')} flags={extract_meta.get('quality_flags')}")
 
@@ -509,3 +501,65 @@ async def upload_and_ea(
         ui_obj["warnings"].extend(packet["meta"].get("warnings", []))
         ui_obj["extract_meta"] = extract_meta
     return {"ui": ui_obj}
+
+
+@app.post("/api/payments/topup/initiate")
+async def initiate_credit_topup(
+    pack: str,  # "starter_120", "growth_300", or "pro_600"
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Initiate a credit pack purchase.
+    Creates PaymentRecord with user_id, then returns Razorpay URL.
+    When webhook fires, it will find this record and credit the user.
+    """
+    import uuid
+    
+    # Find the pack
+    credit_pack = db.query(CreditPack).filter(
+        CreditPack.pack_id == pack,
+        CreditPack.is_active == 1
+    ).first()
+    
+    if not credit_pack:
+        raise HTTPException(status_code=404, detail=f"Credit pack '{pack}' not found")
+    
+    # Generate unique order ID
+    order_id = f"caio_{uuid.uuid4().hex[:12]}"
+    
+    # Create payment record with user_id
+    payment_record = PaymentRecord(
+        user_id=current_user.id,
+        pack_id=credit_pack.pack_id,
+        gateway="razorpay",
+        gateway_order_id=order_id,
+        amount_minor_units=credit_pack.amount_minor_units,
+        currency=credit_pack.currency,
+        status="pending",
+    )
+    
+    db.add(payment_record)
+    db.commit()
+    
+    logger.info(f"💳 Created payment record {order_id} for user {current_user.id}, pack {pack}")
+    
+    # Map pack_id to Razorpay URL
+    razorpay_urls = {
+        "starter_120": "https://rzp.io/rzp/caio-starter-120",
+        "growth_300": "https://rzp.io/rzp/caio-growth-300",
+        "pro_600": "https://rzp.io/rzp/caio-pro-600",
+    }
+    
+    payment_url = razorpay_urls.get(pack)
+    if not payment_url:
+        raise HTTPException(status_code=500, detail="Payment URL not configured")
+    
+    return {
+        "payment_url": payment_url,
+        "order_id": order_id,
+        "pack": credit_pack.display_name,
+        "credits": credit_pack.credits,
+        "amount": credit_pack.amount_minor_units / 100,
+        "currency": credit_pack.currency,
+    }
