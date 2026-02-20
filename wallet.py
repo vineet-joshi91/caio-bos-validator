@@ -64,6 +64,7 @@ from sqlalchemy import (
     BigInteger,
     Integer,
     Text,
+    Boolean,
     Date,
     TIMESTAMP,
     String,
@@ -143,7 +144,7 @@ class CreditPack(Base):
     credits = Column(Integer, nullable=False)
     display_name = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
-    is_active = Column(Integer, nullable=False, default=True)
+    is_active = Column(Boolean, nullable=False, default=True)
     gateway_product_id = Column(Text, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
