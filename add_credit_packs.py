@@ -27,7 +27,7 @@ def add_credit_packs():
             "credits": 120,
             "display_name": "Starter Pack",
             "description": "120 credits for CAIO analysis (2 EA+DR combos or 12 EA-only runs)",
-            "is_active": 1,
+            "is_active": True,
             "gateway_product_id": "caio-starter-120",  # Matches Razorpay page slug
         },
         {
@@ -37,7 +37,7 @@ def add_credit_packs():
             "credits": 300,
             "display_name": "Growth Pack",
             "description": "300 credits for CAIO analysis (5 EA+DR combos or 30 EA-only runs)",
-            "is_active": 1,
+            "is_active": True,
             "gateway_product_id": "caio-growth-300",
         },
         {
@@ -47,7 +47,7 @@ def add_credit_packs():
             "credits": 600,
             "display_name": "Pro Pack",
             "description": "600 credits for CAIO analysis (10 EA+DR combos or 60 EA-only runs)",
-            "is_active": 1,
+            "is_active": True,
             "gateway_product_id": "caio-pro-600",
         },
     ]
