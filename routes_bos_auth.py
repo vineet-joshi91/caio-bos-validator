@@ -12,7 +12,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
@@ -21,6 +21,10 @@ from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP
 from sqlalchemy.orm import Session
 
 from db import Base, get_db
+
+# Add logging
+import logging
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------
 # Config
@@ -51,7 +55,6 @@ class User(Base):
     username = Column(Text, nullable=True)
     tier = Column(Text, nullable=False, default="demo")
     is_test = Column(Boolean, nullable=False, default=False)
-    # (other columns exist in DB; we don’t need to map them all here)
 
 
 # ---------------------------------------------------------------------
@@ -73,7 +76,7 @@ class MeResponse(BaseModel):
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    me: MeResponse
+    me: Optional[MeResponse] = None
 
 
 # ---------------------------------------------------------------------
@@ -122,6 +125,64 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
 # ---------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------
+@router.post("/signup", response_model=LoginResponse)
+async def signup(
+    email: str = Body(...),
+    password: str = Body(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Create new user account and return access token.
+    """
+    from wallet import get_or_create_wallet, apply_credit_topup
+    
+    # Check if user already exists
+    existing = db.query(User).filter(User.email.ilike(email)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Create user
+    hashed_password = pwd_context.hash(password)
+    new_user = User(
+        email=email,
+        hashed_password=hashed_password,
+        tier="standard",
+        is_admin=False,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    # Give 100 free credits
+    try:
+        wallet = get_or_create_wallet(db, new_user.id)
+        apply_credit_topup(
+            db=db,
+            user_id=new_user.id,
+            credits=100,
+            reason="signup_bonus",
+            metadata={"source": "new_user_signup"}
+        )
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to give signup credits to user {new_user.id}: {e}")
+    
+    # Generate token
+    access_token = _create_access_token(new_user.id)
+    
+    return LoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        me=MeResponse(
+            id=new_user.id,
+            email=new_user.email,
+            is_admin=new_user.is_admin,
+            is_paid=new_user.is_paid,
+            tier=new_user.tier or "standard",
+        )
+    )
+
+
 @router.post("/login", response_model=LoginResponse)
 def bos_login(req: LoginRequest, db: Session = Depends(get_db)):
     user = _get_user_by_email(db, req.email)
@@ -157,6 +218,7 @@ def bos_me(user: User = Depends(get_current_user)):
         is_paid=bool(user.is_paid),
         tier=user.tier or "demo",
     )
+
 
 @router.post("/token")
 def bos_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
